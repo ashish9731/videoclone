@@ -28,6 +28,9 @@ dist-ssr
 # Local npm cache (sandbox install artifacts)
 .npm-cache/
 
+# Supabase CLI local state (linked project, credentials) — never commit
+supabase/.temp/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

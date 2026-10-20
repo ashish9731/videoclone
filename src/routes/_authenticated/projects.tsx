@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Film, Plus, Scissors, Trash2 } from "lucide-react";
+import { Film, LogOut, Plus, Scissors, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -89,6 +89,19 @@ function Projects() {
         <Link to="/" className="flex items-center gap-2 font-display font-bold">
           <Scissors className="h-5 w-5 text-primary" /> Cutroom
         </Link>
+        <div className="flex items-center gap-3">
+          <span className="hidden text-sm text-muted-foreground sm:inline">{user.email || "Signed in"}</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={async () => {
+              await supabase.auth.signOut();
+              navigate({ to: "/auth" });
+            }}
+          >
+            <LogOut className="mr-1 h-4 w-4" /> Sign out
+          </Button>
+        </div>
       </header>
       <main className="mx-auto max-w-6xl px-6 py-10">
         <div className="flex items-center justify-between">

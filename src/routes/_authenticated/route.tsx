@@ -1,14 +1,18 @@
-import { createFileRoute, Outlet } from "@tanstack/react-router";
-import { ensureSession } from "@/lib/session";
+import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
-  // No login screen: the session is obtained silently (anonymous sign-in or
-  // demo credentials). Failures surface in the root error component with a
-  // concrete configuration message.
+  // Real authentication: require a signed-in Supabase session (email or Google).
+  // Signed-out visitors are redirected to /auth. The resolved user is passed
+  // through context so editor / projects keep using user.id (== auth.uid()).
   beforeLoad: async () => {
-    const user = await ensureSession();
-    return { user };
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const user = session?.user;
+    if (!user) throw redirect({ to: "/auth" });
+    return { user: { id: user.id, email: user.email ?? "" } };
   },
   component: () => <Outlet />,
 });
