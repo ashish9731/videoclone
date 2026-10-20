@@ -14,6 +14,7 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedProjectsRouteImport } from './routes/_authenticated/projects'
 import { Route as ApiTranscribeRouteImport } from './routes/api/transcribe'
+import { Route as OauthConsentRouteImport } from './routes/oauth.consent'
 import { Route as AuthenticatedEditorProjectIdRouteImport } from './routes/_authenticated/editor.$projectId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -40,6 +41,11 @@ const ApiTranscribeRoute = ApiTranscribeRouteImport.update({
   path: '/api/transcribe',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OauthConsentRoute = OauthConsentRouteImport.update({
+  id: '/oauth/consent',
+  path: '/oauth/consent',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedEditorProjectIdRoute =
   AuthenticatedEditorProjectIdRouteImport.update({
     id: '/editor/$projectId',
@@ -52,6 +58,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/projects': typeof AuthenticatedProjectsRoute
   '/api/transcribe': typeof ApiTranscribeRoute
+  '/oauth/consent': typeof OauthConsentRoute
   '/editor/$projectId': typeof AuthenticatedEditorProjectIdRoute
 }
 export interface FileRoutesByTo {
@@ -59,6 +66,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/projects': typeof AuthenticatedProjectsRoute
   '/api/transcribe': typeof ApiTranscribeRoute
+  '/oauth/consent': typeof OauthConsentRoute
   '/editor/$projectId': typeof AuthenticatedEditorProjectIdRoute
 }
 export interface FileRoutesById {
@@ -68,14 +76,26 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/_authenticated/projects': typeof AuthenticatedProjectsRoute
   '/api/transcribe': typeof ApiTranscribeRoute
+  '/oauth/consent': typeof OauthConsentRoute
   '/_authenticated/editor/$projectId': typeof AuthenticatedEditorProjectIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/auth' | '/projects' | '/api/transcribe' | '/editor/$projectId'
+    | '/'
+    | '/auth'
+    | '/projects'
+    | '/api/transcribe'
+    | '/oauth/consent'
+    | '/editor/$projectId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/projects' | '/api/transcribe' | '/editor/$projectId'
+  to:
+    | '/'
+    | '/auth'
+    | '/projects'
+    | '/api/transcribe'
+    | '/oauth/consent'
+    | '/editor/$projectId'
   id:
     | '__root__'
     | '/'
@@ -83,6 +103,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/_authenticated/projects'
     | '/api/transcribe'
+    | '/oauth/consent'
     | '/_authenticated/editor/$projectId'
   fileRoutesById: FileRoutesById
 }
@@ -91,6 +112,7 @@ export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
   ApiTranscribeRoute: typeof ApiTranscribeRoute
+  OauthConsentRoute: typeof OauthConsentRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -130,6 +152,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiTranscribeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/oauth/consent': {
+      id: '/oauth/consent'
+      path: '/oauth/consent'
+      fullPath: '/oauth/consent'
+      preLoaderRoute: typeof OauthConsentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/editor/$projectId': {
       id: '/_authenticated/editor/$projectId'
       path: '/editor/$projectId'
@@ -158,6 +187,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
   ApiTranscribeRoute: ApiTranscribeRoute,
+  OauthConsentRoute: OauthConsentRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -758,6 +758,120 @@ export const EFFECTS: FxDef[] = [
       }
     }),
   },
+  {
+    id: 'halftone', name: 'Halftone', group: 'Retro',
+    apply: (L, k, _t, s) => {
+      const src = copyOf(L, 'fx-halftone');
+      const si = ctx2d(src).getImageData(0, 0, src.width, src.height).data;
+      clear(L);
+      const cx = ctx2d(L);
+      const cell = Math.max(3, Math.round(6 * s));
+      for (let y = 0; y < L.height; y += cell) for (let xp = 0; xp < L.width; xp += cell) {
+        const idx = (y * L.width + xp) * 4;
+        if (si[idx + 3]! < 40) continue;
+        const lum = (0.299 * si[idx]! + 0.587 * si[idx + 1]! + 0.114 * si[idx + 2]!) / 255;
+        const rr = (cell / 2) * (1 - lum) * (0.6 + 0.8 * k);
+        if (rr < 0.4) continue;
+        cx.fillStyle = `rgb(${si[idx]},${si[idx + 1]},${si[idx + 2]})`;
+        cx.beginPath(); cx.arc(xp + cell / 2, y + cell / 2, rr, 0, Math.PI * 2); cx.fill();
+      }
+    },
+  },
+  {
+    id: 'ripple', name: 'Ripple', group: 'Distort',
+    apply: (L, k, t, s) => {
+      const src = copyOf(L, 'fx-ripple'); clear(L); const x = ctx2d(L);
+      const H = L.height, cy = H / 2, step = Math.max(2, Math.round(3 * s));
+      for (let y = 0; y < H; y += step) {
+        const dist = Math.abs(y - cy);
+        const amp = Math.sin(dist / (24 * s) - t * 6) * 18 * k * s * Math.max(0, 1 - dist / (H * 0.7));
+        x.drawImage(src, 0, y, L.width, step, amp, y, L.width, step);
+      }
+    },
+  },
+  {
+    id: 'echo', name: 'Echo', group: 'Distort',
+    apply: (L, k, _t, s) => {
+      const src = copyOf(L, 'fx-echo'); clear(L); const x = ctx2d(L);
+      const gap = 26 * k * s + 6;
+      for (let i = 3; i >= 1; i--) { x.save(); x.globalAlpha = 0.5 * (1 - i / 4); x.drawImage(src, i * gap, 0); x.restore(); }
+      x.drawImage(src, 0, 0);
+    },
+  },
+  {
+    id: 'motion-trail', name: 'Motion Trail', group: 'Lens',
+    apply: (L, k, _t, s) => {
+      const src = copyOf(L, 'fx-trail'); clear(L); const x = ctx2d(L);
+      const n = 6, dx = (30 * k * s) / n;
+      for (let i = 1; i < n; i++) { x.save(); x.globalAlpha = 0.35 * (1 - i / n); x.drawImage(src, -i * dx, 0); x.restore(); }
+      x.drawImage(src, 0, 0);
+    },
+  },
+  {
+    id: 'old-film', name: 'Old Film', group: 'Retro',
+    apply: (L, k, t, s) => {
+      grain(L, k * 0.5, t);
+      const x = ctx2d(L); const seed = Math.floor(t * 20);
+      x.save(); x.globalAlpha = 0.5 * k; x.strokeStyle = '#fff';
+      for (let i = 0; i < 3; i++) if (rand(seed + i) > 0.6) { const sx = Math.floor(rand(seed + i + 9) * L.width); x.beginPath(); x.moveTo(sx, 0); x.lineTo(sx + (rand(i) * 6 - 3), L.height); x.lineWidth = Math.max(1, 1.5 * s); x.stroke(); }
+      x.restore();
+      x.save(); x.globalCompositeOperation = 'overlay'; x.globalAlpha = 0.12 * k * (0.5 + rand(seed) / 2); x.fillStyle = rand(seed) > 0.5 ? '#fff' : '#000'; x.fillRect(0, 0, L.width, L.height); x.restore();
+      vignette(L, 0.5 * k);
+    },
+  },
+  {
+    id: 'tv-static', name: 'TV Static', group: 'Retro',
+    apply: (L, k, t, s) => {
+      const x = ctx2d(L); const img = x.getImageData(0, 0, L.width, L.height); const d = img.data;
+      const frame = Math.floor(t * 30); const a = k * 0.5; const bs = Math.max(1, Math.round(4 * s));
+      for (let y = 0; y < L.height; y++) for (let xp = 0; xp < L.width; xp++) {
+        const i = (y * L.width + xp) * 4; if (d[i + 3] === 0) continue;
+        const v = rand(Math.floor(xp / bs) + Math.floor(y / bs) * 997 + frame) * 255;
+        d[i] = d[i]! + (v - d[i]!) * a; d[i + 1] = d[i + 1]! + (v - d[i + 1]!) * a; d[i + 2] = d[i + 2]! + (v - d[i + 2]!) * a;
+      }
+      x.putImageData(img, 0, 0);
+    },
+  },
+  {
+    id: 'bubbles', name: 'Bubbles', group: 'Party',
+    apply: (L, k, t, s) => particles(L, -t, Math.round(12 + 50 * k), (x, px, py, i, sc) => {
+      const r = (5 + rand(i) * 14) * sc;
+      x.beginPath(); x.arc(px, py, r, 0, Math.PI * 2); x.fillStyle = 'rgba(180,220,255,0.18)'; x.fill();
+      x.strokeStyle = 'rgba(255,255,255,0.7)'; x.lineWidth = 1.5 * sc; x.stroke();
+      x.beginPath(); x.arc(px - r * 0.3, py - r * 0.3, r * 0.25, 0, Math.PI * 2); x.fillStyle = 'rgba(255,255,255,0.6)'; x.fill();
+    }, 160, s),
+  },
+  {
+    id: 'dust', name: 'Dust Motes', group: 'Nature',
+    apply: (L, k, t, s) => particles(L, t, Math.round(20 + 70 * k), (x, px, py, i, sc) => {
+      x.fillStyle = `rgba(255,250,230,${0.25 + rand(i + 3) * 0.4})`;
+      x.beginPath(); x.arc(px, py, (1 + rand(i) * 2.5) * sc, 0, Math.PI * 2); x.fill();
+    }, 30, s),
+  },
+  {
+    id: 'fireflies', name: 'Fireflies', group: 'Nature',
+    apply: (L, k, t, s) => {
+      const x = ctx2d(L); const n = Math.round(8 + 30 * k);
+      for (let i = 0; i < n; i++) {
+        const blink = Math.max(0, Math.sin(t * 2 + i * 1.7)); if (blink < 0.2) continue;
+        const px = (rand(i) * L.width + Math.sin(t * 0.6 + i) * 30 * s + L.width) % L.width;
+        const py = rand(i + 200) * L.height + Math.cos(t * 0.5 + i) * 20 * s;
+        const r = (3 + rand(i + 5) * 4) * s * blink * 3;
+        const g = x.createRadialGradient(px, py, 0, px, py, r);
+        g.addColorStop(0, `rgba(255,240,150,${blink})`); g.addColorStop(1, 'rgba(255,240,150,0)');
+        x.fillStyle = g; x.beginPath(); x.arc(px, py, r, 0, Math.PI * 2); x.fill();
+      }
+    },
+  },
+  {
+    id: 'bokeh', name: 'Bokeh', group: 'Lens',
+    apply: (L, k, t, s) => particles(L, t, Math.round(8 + 20 * k), (x, px, py, i, sc) => {
+      const r = (24 + rand(i) * 60) * sc; const hue = Math.floor(rand(i + 2) * 360);
+      const g = x.createRadialGradient(px, py, r * 0.2, px, py, r);
+      g.addColorStop(0, `hsla(${hue},70%,70%,0.35)`); g.addColorStop(1, `hsla(${hue},70%,70%,0)`);
+      x.fillStyle = g; x.beginPath(); x.arc(px, py, r, 0, Math.PI * 2); x.fill();
+    }, 20, s),
+  },
 ];
 export const effectById = (id: string) => EFFECTS.find((f) => f.id === id);
 

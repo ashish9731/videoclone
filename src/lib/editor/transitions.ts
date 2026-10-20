@@ -1,4 +1,4 @@
-import { blurInPlace, clear, ctx2d, pixelate, poolCanvas, rgbSplit } from "./fx";
+import { blurInPlace, clear, ctx2d, pixelate, poolCanvas, rand, rgbSplit } from "./fx";
 import { type Clip, type Track, clipEnd } from "./types";
 
 export interface TransitionDef {
@@ -45,6 +45,15 @@ export const TRANSITIONS: TransitionDef[] = [
   { id: "splitting-laser", name: "Splitting Laser", group: "Wipe" },
   { id: "checker", name: "Checker Reveal", group: "Shape" },
   { id: "diagonal", name: "Diagonal Sweep", group: "Wipe" },
+  { id: "dissolve", name: "Dissolve", group: "Effects" },
+  { id: "flip-x", name: "Flip horizontal", group: "Camera" },
+  { id: "flip-y", name: "Flip vertical", group: "Camera" },
+  { id: "swing", name: "Swing", group: "Camera" },
+  { id: "spiral", name: "Spiral", group: "Camera" },
+  { id: "fan", name: "Fan", group: "Shape" },
+  { id: "hourglass", name: "Hourglass", group: "Shape" },
+  { id: "blinds-rows", name: "Blinds down", group: "Wipe" },
+  { id: "wind", name: "Wind", group: "Effects" },
 ];
 
 const ALIAS: Record<string, string> = { zoom: "zoom-in", wipe: "wipe-right" };
@@ -344,6 +353,48 @@ export function drawTransition(ctx: CanvasRenderingContext2D, typeIn: string, pR
       const L = p < 0.5 ? from : to;
       const amt = Math.sin(p * Math.PI) * 40 * (W / 1920);
       put(ctx, processed(L, "tr-a", (c) => rgbSplit(c, amt, amt / 4)), { x: (Math.sin(p * 90) * amt) / 2 });
+      return;
+    }
+    case "dissolve": {
+      put(ctx, from);
+      const cols = 12, rows = 8;
+      put(ctx, to, { clip: (x) => { for (let yy = 0; yy < rows; yy++) for (let xx = 0; xx < cols; xx++) { if (rand(xx * 91 + yy * 17 + 3) < e) x.rect((xx * W) / cols, (yy * H) / rows, W / cols + 1, H / rows + 1); } } });
+      return;
+    }
+    case "flip-x":
+    case "flip-y": {
+      const L = p < 0.5 ? from : to;
+      const sc = Math.max(0.001, Math.abs(1 - 2 * p));
+      ctx.save(); ctx.translate(W / 2, H / 2); ctx.scale(type === "flip-x" ? sc : 1, type === "flip-x" ? 1 : sc); ctx.translate(-W / 2, -H / 2);
+      put(ctx, L); ctx.restore();
+      return;
+    }
+    case "swing":
+      if (p < 0.5) put(ctx, from, { r: -e * 0.6, x: -W * e * 1.4, a: 1 - p * 2 });
+      else put(ctx, to, { r: 0.6 * (1 - e), x: W * (1 - e) * 1.4, a: (p - 0.5) * 2 });
+      return;
+    case "spiral":
+      if (p < 0.5) put(ctx, from, { r: e * Math.PI * 2, s: 1 - e * 0.9, a: 1 - p * 2 });
+      else put(ctx, to, { r: (1 - e) * Math.PI * 2 - Math.PI, s: 0.1 + e * 0.9, a: (p - 0.5) * 2 });
+      return;
+    case "fan":
+      put(ctx, from);
+      put(ctx, to, { clip: (x) => { const blades = 6; for (let i = 0; i < blades; i++) { const a0 = (i * Math.PI * 2) / blades; x.moveTo(W / 2, H / 2); x.arc(W / 2, H / 2, diag, a0, a0 + (Math.PI * 2 / blades) * e); } } });
+      return;
+    case "hourglass":
+      put(ctx, from);
+      put(ctx, to, { clip: (x) => { x.rect(W / 2 - (W * e) / 2, 0, W * e, H); x.rect(0, H / 2 - (H * e) / 2, W, H * e); } });
+      return;
+    case "blinds-rows": {
+      put(ctx, from);
+      const n = 8, bh = H / n;
+      put(ctx, to, { clip: (x) => { for (let i = 0; i < n; i++) x.rect(0, i * bh, W, bh * e); } });
+      return;
+    }
+    case "wind": {
+      const amt = Math.sin(p * Math.PI) * 40 * (W / 1920);
+      put(ctx, processed(from, "tr-a", (c) => blurInPlace(c, amt)), { x: -W * e * 0.5, a: 1 - p });
+      put(ctx, processed(to, "tr-b", (c) => blurInPlace(c, amt)), { x: W * (1 - e) * 0.5, a: p });
       return;
     }
     default:

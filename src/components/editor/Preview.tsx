@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { TransformOverlay } from "./TransformOverlay";
-import { Diamond, Pause, Play, SkipBack, SkipForward, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  Diamond,
+  Pause,
+  Play,
+  SkipBack,
+  SkipForward,
+  ChevronLeft,
+  ChevronRight,
+  Maximize2,
+  Minimize2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { type EditorStore, useEditor } from "@/lib/editor/store";
 import { renderFrame } from "@/lib/editor/render";
@@ -40,6 +50,17 @@ export function Preview({ store, assets, captions, width, height, fps }: Props) 
   const time = useEditor(store, (s) => s.time);
   const animate = useEditor(store, (s) => s.animate);
   const [canvasEl, setCanvasEl] = useState<HTMLCanvasElement | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(!!document.fullscreenElement && document.fullscreenElement === rootRef.current);
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    else rootRef.current?.requestFullscreen?.().catch(() => {});
+  };
   const attachCanvas = useCallback((el: HTMLCanvasElement | null) => {
     canvasRef.current = el;
     setCanvasEl(el);
@@ -184,7 +205,7 @@ export function Preview({ store, assets, captions, width, height, fps }: Props) 
 
   const frame = 1 / fps;
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div ref={rootRef} className={`flex h-full min-h-0 flex-col${isFullscreen ? " bg-black" : ""}`}>
       <div ref={holderRef} className="hidden" />
       <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-stage p-10">
         <canvas data-preview
@@ -216,6 +237,15 @@ export function Preview({ store, assets, captions, width, height, fps }: Props) 
         </Button>
         <Button size="icon" variant="ghost" onClick={() => store.set({ time: duration })} aria-label="Go to end">
           <SkipForward className="h-4 w-4" />
+        </Button>
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={toggleFullscreen}
+          aria-label={isFullscreen ? "Exit full screen" : "Play in full screen"}
+          title={isFullscreen ? "Exit full screen" : "Play in full screen"}
+        >
+          {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
         </Button>
         <span className="ml-auto font-mono text-xs text-muted-foreground">{formatTime(duration, fps)}</span>
         <Button

@@ -22,13 +22,27 @@ export const Route = createFileRoute("/auth")({
     } = await supabase.auth.getSession();
     if (session?.user) throw redirect({ to: "/projects" });
   },
+  // `next` lets another flow (e.g. the OAuth consent screen) return here after
+  // sign-in. It is only honoured when it points back at a /oauth/ path.
+  validateSearch: (search: Record<string, unknown>): { next?: string | undefined } => {
+    const value = typeof search["next"] === "string" ? search["next"] : undefined;
+    return value === undefined ? {} : { next: value };
+  },
   component: AuthPage,
 });
+
+// Guard against open redirects: only return to our own OAuth consent flow.
+function safeNext(next: string | undefined): string | null {
+  if (!next) return null;
+  if (next.startsWith("/oauth/") && !next.startsWith("//")) return next;
+  return null;
+}
 
 type Mode = "signin" | "signup";
 
 function AuthPage() {
   const navigate = useNavigate();
+  const { next } = Route.useSearch();
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -36,20 +50,37 @@ function AuthPage() {
   const [busy, setBusy] = useState(false);
   const [awaitingConfirm, setAwaitingConfirm] = useState(false);
 
+  // Where to land once a session exists: back to the calling OAuth flow if it
+  // supplied a safe `next`, otherwise the projects list.
+  const goAfterAuth = () => {
+    const target = safeNext(next);
+    if (target) {
+      window.location.assign(target);
+      return;
+    }
+    void navigate({ to: "/projects", replace: true });
+  };
+
   // Complete an OAuth redirect: supabase-js exchanges the token in the URL, then
   // fires SIGNED_IN. Send the user into the app once a session exists.
   useEffect(() => {
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "SIGNED_IN" && session?.user) void navigate({ to: "/projects", replace: true });
+      if (event === "SIGNED_IN" && session?.user) goAfterAuth();
     });
     return () => data.subscription.unsubscribe();
-  }, [navigate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigate, next]);
 
   const google = async () => {
     setBusy(true);
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: `${window.location.origin}/auth` },
+      options: {
+        redirectTo: `${window.location.origin}/auth`,
+        // Force Google's account chooser (list of signed-in Google accounts)
+        // instead of the bare "Email or phone" credential form.
+        queryParams: { prompt: "select_account" },
+      },
     });
     if (error) {
       toast.error(error.message);
@@ -75,14 +106,14 @@ function AuthPage() {
         if (error) throw error;
         // If a session came back, email confirmation is off → go straight in.
         if (data.session?.user) {
-          await navigate({ to: "/projects", replace: true });
+          goAfterAuth();
           return;
         }
         setAwaitingConfirm(true);
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
         if (error) throw error;
-        await navigate({ to: "/projects", replace: true });
+        goAfterAuth();
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Authentication failed");

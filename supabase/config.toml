@@ -1,1 +1,17 @@
 project_id = "xtlxcgzicaugttdigrxh"
+
+# Supabase OAuth 2.1 Server.
+# NOTE: This project runs against the hosted project (xtlxcgzicaugttdigrxh),
+# so the source of truth for these settings is the dashboard
+# (Authentication > OAuth Server and Authentication > URL Configuration).
+# This block documents/mirrors that configuration and takes effect only when
+# running a local stack via `supabase start`.
+#
+# Dashboard equivalents already set:
+#   Site URL:            http://localhost:3000   (Authentication > URL Configuration)
+#   Authorization Path:  /oauth/consent          (Authentication > OAuth Server)
+# Consent UI implementation: src/routes/oauth.consent.tsx
+[auth.oauth_server]
+enabled = true
+authorization_url_path = "/oauth/consent"
+allow_dynamic_registration = false

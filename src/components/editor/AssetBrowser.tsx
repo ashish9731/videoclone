@@ -23,7 +23,7 @@ const CATEGORY: Record<LibraryTab, string[]> = {
   Media: ['Media'],
   Audio: ['Audio'],
   Text: ['Add text', 'Yours', 'Trending', 'Classic', 'Animation', 'Text template'],
-  Stickers: ['Yours', 'Trending', 'Faces', 'Arrows', 'Badges', 'Bubbles', 'Shapes', 'Animals', 'Weather', 'Celebration', 'Icons', 'Animal Meme'],
+  Stickers: ['Yours', 'Trending', 'Smileys', 'Love', 'Party', 'Food', 'Nature', 'Weather', 'Music', 'Symbols', 'Animal Meme', 'Faces', 'Arrows', 'Badges', 'Bubbles', 'Shapes', 'Animals', 'Celebration', 'Icons'],
   Effects: ['Favorites', 'Trending', 'Basic', 'Distort', 'Retro', 'Party', 'Lens', 'Split', 'Nature'],
   Transitions: ['Favorites', 'Trending', 'Basic', 'Slide', 'Wipe', 'Camera', 'Effects', 'Shape'],
   Captions: ['Captions'],
@@ -45,8 +45,17 @@ function PresetPreview({ item, tab, selected, height }: { item: Item; tab: Libra
       const t = over && !matchMedia('(prefers-reduced-motion: reduce)').matches ? (performance.now() / 1000) % 2 : 0.65;
       const sample = document.createElement('canvas'); sample.width = 160; sample.height = 90;
       const sx = sample.getContext('2d');
-      if (sx && photo.complete && photo.naturalWidth) { sx.drawImage(photo, 0, 0, 160, 90); }
-      else { photo.onload = draw; return; }
+      const live = document.querySelector<HTMLCanvasElement>('canvas[data-preview]');
+      const useLive = (tab === 'Effects' || tab === 'Transitions' || tab === 'Filters') && !!live && live.width > 0 && live.height > 0;
+      if (sx && useLive && live) {
+        // Preview the preset on the actual timeline frame (cover-fit) so hovering shows the real look.
+        const lr = live.width / live.height, tr = 160 / 90;
+        let sw = live.width, sh = live.height, ox = 0, oy = 0;
+        if (lr > tr) { sw = live.height * tr; ox = (live.width - sw) / 2; } else { sh = live.width / tr; oy = (live.height - sh) / 2; }
+        sx.fillStyle = '#12141a'; sx.fillRect(0, 0, 160, 90);
+        sx.drawImage(live, ox, oy, sw, sh, 0, 0, 160, 90);
+      } else if (sx && photo.complete && photo.naturalWidth) { sx.drawImage(photo, 0, 0, 160, 90); }
+      else if (sx) { photo.onload = () => { photo.onload = null; draw(); }; return; }
       const source = sample;
       let c: Clip = item.clip ?? { ...textClip(0), kind: 'video', text: undefined, out: 4 };
       if (!item.clip && selected && selected.kind !== 'audio') c = { ...selected, start: 0, in: 0, out: 4, speed: 1, speedCurve: undefined, transform: { x: 0, y: 0, scale: 1, rotation: 0, opacity: 1 }, keyframes: {}, effects: defaultEffects(), filter: undefined, fx: undefined, anim: undefined };
@@ -99,7 +108,7 @@ export function AssetBrowser({ tab, store, width, height, media, audio, captions
     store.set({ selectedClipId: target.id, time: target.start + Math.min(0.25, clipDuration(target) / 2), playing: false, inspectorTab: 'trans' });
   } }));
   if (tab === 'Text') items = TEXT_TEMPLATES.map(t => ({ id: t.id, name: t.name, group: t.anim?.loop ? 'Animation' : 'Classic', clip: clipFromTemplate(t, 0, width, height), apply: () => addClipToTimeline(store, clipFromTemplate(t, visiblePresetTime(store), width, height)) }));
-  if (tab === 'Stickers') items = [...ART_STICKERS.map(e => ({ id: e.id, name: e.name, group: 'group' in e ? String(e.group) : e.id === 'cat' ? 'Animal Meme' : 'Icons', clip: shapeClip(`sticker:${e.id}`, 0, e.fill), apply: () => { const c = shapeClip(`sticker:${e.id}`, visiblePresetTime(store), e.fill); c.name = e.name; addClipToTimeline(store, c); } })), ...SHAPES.map(s => ({ id: s.id, name: s.name, group: 'Shapes', clip: shapeClip(s.id, 0), apply: () => addClipToTimeline(store, shapeClip(s.id, visiblePresetTime(store))) }))];
+  if (tab === 'Stickers') items = [...ART_STICKERS.map(e => ({ id: e.id, name: e.name, group: String(e.group), clip: shapeClip(`sticker:${e.id}`, 0, e.fill), apply: () => { const c = shapeClip(`sticker:${e.id}`, visiblePresetTime(store), e.fill); c.name = e.name; addClipToTimeline(store, c); } })), ...SHAPES.map(s => ({ id: s.id, name: s.name, group: 'Shapes', clip: shapeClip(s.id, 0), apply: () => addClipToTimeline(store, shapeClip(s.id, visiblePresetTime(store))) }))];
   const alias: Record<string, string[]> = { Classic: ['Basic', 'Retro', 'Classic', 'Icons', 'Shapes'], 'Magic cutout': ['AI portrait'], Motion: ['Party'], Movement: ['Slide', 'Camera'], Mask: ['Shape', 'Wipe'], Blur: ['Basic'], Light: ['Effects', 'Lens'], Overlay: ['Wipe', 'Shape'], 'Intro & Outro': ['Lens', 'Party'], Halloween: ['Retro', 'Distort'], 'Black Friday': ['Party', 'Classic'], 'Animal Meme': ['Animal Meme'], Icons: ['Icons'], Emoji: ['Icons'], Food: ['Classic'], 'Wild Pics': ['Nature', 'Split'] };
   const all = ['Trending', 'NEW', 'Hits', 'Add text', 'Text template', 'Stickers', 'Video effects', 'Transitions'].includes(category);
   const shown = items.filter(i => i.name.toLowerCase().includes(search.toLowerCase()) && (category === 'Favorites' || category === 'Yours' ? favorites.includes(`${tab}:${i.id}`) : all || (i.group === category || (alias[category] ?? [category]).includes(i.group))));

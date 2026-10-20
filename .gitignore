@@ -31,6 +31,9 @@ dist-ssr
 # Supabase CLI local state (linked project, credentials) — never commit
 supabase/.temp/
 
+# Debranding: relocated legacy Lovable favicon backup (kept out of served /public)
+debrand-backup-favicon.ico
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

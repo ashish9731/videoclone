@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Captions, Download, Eye, EyeOff, Languages, Plus, Sparkles, Trash2, Type, X } from "lucide-react";
+import { Captions, Download, Eye, EyeOff, FileUp, Languages, Plus, Sparkles, Trash2, Type, X } from "lucide-react";
 import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,7 @@ import {
   defaultCaptionStyle,
   formatTime,
   languageName,
+  parseSubtitles,
   textClip,
   uid,
 } from "@/lib/editor/types";
@@ -44,6 +45,7 @@ export function CaptionsPanel({ store, assets, tracks, activeId, setActiveId, cr
   const time = useEditor(store, (s) => s.time);
   const [job, setJob] = useState<{ p: number; label: string } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
   const [target, setTarget] = useState("es");
   const translate = useServerFn(translateCues);
   const active = tracks.find((t) => t.id === activeId) ?? null;
@@ -128,6 +130,29 @@ export function CaptionsPanel({ store, assets, tracks, activeId, setActiveId, cr
     a.click();
   };
 
+  const importSubtitles = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const cues = parseSubtitles(text);
+      if (!cues.length) {
+        toast.error("No captions found in that file. Use a .srt or .vtt subtitle file.");
+        return;
+      }
+      const name = file.name.replace(/\.(srt|vtt)$/i, "") || "Imported";
+      const t = await createTrack({ name: `${name} captions`, language: "auto", cues, style: defaultCaptionStyle(), visible: true });
+      if (t) {
+        setActiveId(t.id);
+        store.set({ time: cues[0]!.start, playing: false });
+      }
+      toast.success(`Imported ${cues.length} captions from ${file.name}`);
+    } catch (e) {
+      toast.error((e as Error).message || "Could not read that file");
+    } finally {
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
   const style = active?.style;
   const setStyle = (patch: Partial<CaptionTrack["style"]>) =>
     active && updateTrack(active.id, (t) => ({ ...t, style: { ...t.style, ...patch } }));
@@ -139,6 +164,30 @@ export function CaptionsPanel({ store, assets, tracks, activeId, setActiveId, cr
           <Sparkles className="mr-2 h-4 w-4" /> Auto-generate captions
         </Button>
         <p className="text-[11px] text-muted-foreground">Transcribes the spoken audio on your timeline into timed captions.</p>
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={async () => {
+              const t = await createTrack({ name: "Manual captions", language: "en", cues: [], style: defaultCaptionStyle(), visible: true });
+              if (t) setActiveId(t.id);
+              toast("Add cues at the playhead and type your text.");
+            }}
+          >
+            <Type className="mr-1 h-3.5 w-3.5" /> Manual captions
+          </Button>
+          <Button size="sm" variant="secondary" onClick={() => fileRef.current?.click()}>
+            <FileUp className="mr-1 h-3.5 w-3.5" /> Import .srt / .vtt
+          </Button>
+        </div>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".srt,.vtt,text/plain"
+          className="hidden"
+          aria-label="Import subtitle file"
+          onChange={(e) => importSubtitles(e.target.files?.[0])}
+        />
         {job && (
           <div className="rounded-md bg-secondary p-2">
             <div className="flex items-center justify-between text-xs">

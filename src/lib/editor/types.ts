@@ -437,6 +437,56 @@ export function cuesToSrt(cues: CaptionCue[]): string {
     .join("\n");
 }
 
+/** Parse a timestamp like HH:MM:SS,mmm / HH:MM:SS.mmm / MM:SS.mmm into seconds. */
+function parseSubtitleTime(raw: string): number | null {
+  const m = raw.trim().match(/^(?:(\d{1,2}):)?(\d{1,2}):(\d{1,2})[.,](\d{1,3})$/);
+  if (!m) return null;
+  const h = m[1] ? Number(m[1]) : 0;
+  const min = Number(m[2]);
+  const sec = Number(m[3]);
+  const ms = Number((m[4] ?? "0").padEnd(3, "0"));
+  if (!Number.isFinite(h) || !Number.isFinite(min) || !Number.isFinite(sec) || !Number.isFinite(ms)) return null;
+  return h * 3600 + min * 60 + sec + ms / 1000;
+}
+
+/** Strip WebVTT voice/span tags so cue text stays clean. */
+function cleanSubtitleText(line: string): string {
+  return line
+    .replace(/<[^>]+>/g, "")
+    .replace(/\{[^}]*\}/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/\\N/gi, "\n")
+    .trim();
+}
+
+/**
+ * Parse SubRip (.srt) or WebVTT (.vtt) subtitle text into caption cues.
+ * Cue ids, NOTE/STYLE headers and inline tags are ignored; malformed blocks are skipped.
+ */
+export function parseSubtitles(text: string): CaptionCue[] {
+  const normalized = text.replace(/\r\n?/g, "\n").replace(/^\uFEFF/, "");
+  const cues: CaptionCue[] = [];
+  for (const block of normalized.split(/\n{2,}/)) {
+    const lines = block.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+    if (!lines.length) continue;
+    let i = 0;
+    // WebVTT file header / cue identifiers before the timing line
+    if (/^WEBVTT/i.test(lines[0]!)) i = 1;
+    // A leading pure-integer line is the SRT sequence number, not content.
+    if (lines[i] && /^\d+$/.test(lines[i]!) && lines[i + 1]?.includes("-->")) i += 1;
+    const timing = lines[i];
+    if (!timing || !timing.includes("-->")) continue;
+    const [startRaw, endRaw] = timing.split("-->");
+    const start = parseSubtitleTime(startRaw?.replace(/\s+align:.*$/i, "") ?? "");
+    const end = parseSubtitleTime(endRaw?.replace(/\s+align:.*$/i, "") ?? "");
+    if (start === null || end === null || end <= start) continue;
+    const body = cleanSubtitleText(lines.slice(i + 1).join("\n"));
+    if (!body) continue;
+    cues.push({ id: uid(), start, end, text: body });
+  }
+  return cues.sort((a, b) => a.start - b.start);
+}
+
 export function newTrack(kind: TrackKind, index: number): Track {
   const label = kind === "video" ? "Video" : kind === "audio" ? "Audio" : "Text";
   return { id: uid(), kind, name: `${label} ${index}`, muted: false, hidden: false, locked: false, clips: [] };
