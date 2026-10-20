@@ -1,0 +1,2 @@
+export const EDITOR_FONTS = ['Sora', 'Manrope', 'Bebas Neue', 'Playfair Display', 'JetBrains Mono', 'Anton', 'Archivo Black', 'Barlow Condensed', 'Bitter', 'Caveat', 'Cinzel', 'Cormorant Garamond', 'DM Sans', 'Dancing Script', 'Fjalla One', 'Josefin Sans', 'Lobster', 'Lora', 'Merriweather', 'Montserrat', 'Oswald', 'Pacifico', 'Permanent Marker', 'Raleway', 'Space Grotesk'];
+export const FONT_STYLESHEET = `https://fonts.googleapis.com/css2?${EDITOR_FONTS.map(f => `family=${f.replaceAll(' ', '+')}`).join('&')}&display=swap`;

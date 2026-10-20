@@ -1,0 +1,27 @@
+## Architecture rules
+- Editor engine lives in `src/lib/editor/` (pure types/render/mix/export); UI in `src/components/editor/`. Why: one `renderFrame` is shared by preview and export so they always match.
+- Timeline is stored as JSON in `projects.timeline`; captions live in `caption_tracks` rows. Why: captions are edited/translated independently and saved per track.
+- Media files go to the private `media` bucket under `<userId>/...`; playback uses signed URLs, decoding (export, transcription) always uses the signed remote URL. Why: blob URLs don't support range requests needed by mediabunny.
+- Export runs fully in the browser via mediabunny (WebCodecs), preferring H.264/AAC with VP9/AV1 + Opus MP4 fallbacks. Why: no server video processing on Workers.
+- Transcription: client mixes timeline audio at 16 kHz, splits on silence, sends short WAV chunks to `/api/transcribe` (bearer-verified). Why: the gateway endpoint returns no timestamps, so chunk boundaries provide cue timing.
+- tsconfig is strict (noUncheckedIndexedAccess, exactOptionalPropertyTypes); optional fields are typed `?: T | undefined`.
+- Rendering is a layered compositor: each visual clip renders into its own full-frame layer (`renderClipLayer`), then effects run on the layer and transitions composite layers. Why: transitions need both clips, and per-clip effects must not touch other tracks.
+- Color filters/adjustments use pixel color matrices (`fx.ts`), not `ctx.filter` (only blur uses it, with a fallback). Why: `ctx.filter` is ignored in some browsers, which made effects silently disappear.
+- A clip's `transitionIn` blends from the touching previous clip on the same track; that clip stays rendered past its end for the transition length (`outgoingTail`), in preview and export. Why: CapCut-style transitions between clips without overlapping them.
+- Speed ramps are piecewise-linear curves over normalized clip time; `clipDuration`/`sourceTime`/`speedAt` and the audio mix's playbackRate automation all derive from the same curve. Why: preview, export video and export audio stay in sync.
+- Audio gain (volume, fades, ducking) comes from one `clipGainAt` function used by preview and export. Why: what you hear while editing matches the export.
+- AI portrait effects use on-device MediaPipe segmentation loaded lazily (`ai.ts`); export awaits the model first. Why: no server video processing.
+- Headless test Chromium can't decode H.264; use VP9/WebM files for automated checks.
+- The categorized AssetBrowser draws preset thumbnails through the shared clip renderer and applies engine catalog IDs; unavailable licensed packs are explicitly marked. Why: galleries must represent actual output rather than decorative previews.
+- Crop stores a normalized source rectangle; freeze clips store a source timestamp used by sourceTime. Why: preview and browser export share the same edit semantics.
+- Illustrated stickers are vector shape clips drawn by stickers.ts; additions create a top overlay track and seek past entrance animation. Why: artwork stays editable and is immediately visible above video.
+- Gallery placement uses placement.ts to resolve selected or active visual media and seek within it. Why: quick-add works without selection and when the playhead is outside the selected clip.
+- Caption timing edits pass through caption-edit.ts validation. Why: retiming cannot silently make a cue inactive or non-finite.
+- A timed caption can be converted into a normal text clip and removed from its cue track. Why: free transforms and keyframes reuse the editable overlay engine rather than duplicate it.
+- Browser export uses a resolution-scaled numeric video bitrate with a quality floor. Why: small fallback-codec exports must retain text and artwork detail.
+- `key.ts` keys only the isolated clip layer before color effects; tolerance/softness/spill are normalized 0–1.
+- `mask.ts` uses normalized frame geometry and clip-local interpolated mask keyframes; feathering precedes destination-in compositing.
+- `reframe.ts` tracks downsampled edge/motion saliency causally; cropRect always clamps the aspect-preserving crop inside the source frame.
+- Generated photographic grades use filter-gen.ts, vector sticker families use sticker-gen.ts, and fonts share fonts.ts. Why: deterministic engine catalogs keep editor output and thumbnails consistent.
+- Visual fades are independent from audio fades; clip-controls.ts provides envelopes, and clipGainAt applies clip-only mute. Why: preview and export must agree without changing unrelated clips.
+- AudioClipVolume updates only its clip through EditorStore gestures. Why: dragging gain must not move clips or alter a track.

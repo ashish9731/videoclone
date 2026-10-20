@@ -1,0 +1,24 @@
+# Roadmap — CapCut parity overhaul
+- [x] Per-audio-clip draggable volume line, level display and mute; mouse/keyboard controls, persistence and isolated preview/export gain verified.
+- [x] Clean video/image drag/drop and quick-add defaults; independent visual/audio fade durations verified in preview/export.
+- [x] Real green-screen footage verified with eyedropper and tolerance, visible background and retained foreground in UI MP4 export; stabilized preview canvas ref and isolated slider keyboard controls.
+- [x] Screenshot workflow: ten top tabs and searchable galleries; removed misleading category aliases and unused searches
+- [x] Expanded original video/transition/text/sticker preset library and full color adjustments
+- [x] Timeline trim-left/right, freeze frame and crop controls (regression tested; full crop export comparison not certified)
+- [x] Honest availability: removed unavailable categories and inactive AI portrait effects; avatar explicitly unavailable
+- [x] Render/output audit: 152 retained presets exported at 3 fps, selected frames visually reviewed; not an exhaustive normal-speed edit/delete certification
+- [x] Removed inactive portrait entries and emoji sticker renderer; remaining presets produce distinct render signatures
+- [x] Immediate placement with selected/current media; illustrated sticker add/resize/rotate/delete, text add/delete, filter placement, real caption edit/conversion and UI MP4 export verified
+- [x] Root-cause fix: effects/transitions/motion render on VIDEO clips (preview + export)
+- [x] Layered compositor: transitions between adjacent clips on the same track
+- [x] Transitions library (29) with duration
+- [x] Filters (25 LUT-style presets, intensity) + adjustments without canvas filter
+- [x] Video effects (30+)
+- [x] Clip animations in/out/loop + 12 animated text templates
+- [x] Stickers & shapes library
+- [x] Speed curves (presets + custom editor)
+- [x] Audio: fade presets, ducking
+- [ ] AI: background removal, portrait blur — unavailable pending a working segmentation result; not offered in galleries
+- [ ] AI auto-reframe, style transfer, body effects — require a supported processing service; not offered
+- [x] Targeted end-to-end preview and export verification; exhaustive normal-speed parity, audio quality, and fresh auto-transcription verification remain uncertified
+- [x] Gallery tiles: every tile is a real render of its preset (no emoji, no reused tiles) across Text/Stickers/Effects/Transitions/Captions/Filters
