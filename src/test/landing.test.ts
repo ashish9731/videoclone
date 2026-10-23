@@ -1,3 +1,6 @@
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -23,6 +26,51 @@ import { GENERATED_FILTERS } from "@/lib/editor/filter-gen";
 import { EFFECTS, FILTERS } from "@/lib/editor/fx";
 import { TRANSITIONS } from "@/lib/editor/transitions";
 import { ART_STICKERS } from "@/lib/editor/stickers";
+
+// Competitor and starter-template platform names must never reach a product surface, a doc or a
+// code comment: the page presents this editor as original work, so a brand mention is both a false
+// claim and a trademark risk. They are assembled from fragments so that searching the repository
+// for any of them returns nothing - this guard file included.
+const FORBIDDEN_NAME_PARTS = [
+  ["cap", "cut"],
+  ["love", "able"],
+  ["ado", "be"],
+  ["pre", "miere"],
+  ["final", " cut"],
+  ["film", "ora"],
+  ["da", "vinci"],
+  ["kden", "live"],
+  ["in", "shot"],
+  ["re", "motion"],
+] as const;
+const FORBIDDEN_NAMES = FORBIDDEN_NAME_PARTS.map(([head, tail]) => head + tail);
+
+/** Source trees that ship with the product. */
+const SCAN_ROOTS = ["src", "public", "drizzle", "supabase/migrations"];
+/** Root-level files that describe or configure it. */
+const SCAN_FILES = [
+  "README.md",
+  "AGENTS.md",
+  "roadmap.md",
+  ".gitignore",
+  ".env.example",
+  "package.json",
+  "components.json",
+  "tsconfig.json",
+  "vite.config.ts",
+  "vitest.config.ts",
+  "eslint.config.js",
+  "drizzle.config.ts",
+];
+const TEXT_FILE = /\.(?:ts|tsx|js|cjs|css|md|json|sql|svg|txt|html|toml)$/;
+
+function textUnder(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) return textUnder(path);
+    return TEXT_FILE.test(entry.name) ? [readFileSync(path, "utf8")] : [];
+  });
+}
 
 // The landing page makes claims and promises anchors. These checks keep both honest without
 // rendering a route that needs a router and a live auth session.
@@ -197,8 +245,21 @@ describe("Landing page content", () => {
 
   it("stays white-labelled - no third-party platform or competitor branding in the copy", () => {
     const body = corpus();
-    for (const brand of ["lovable", "capcut", "adobe", "premiere", "final cut"]) {
-      expect(body, brand).not.toContain(brand);
+    for (const name of FORBIDDEN_NAMES) {
+      expect(body, name).not.toContain(name);
+    }
+  });
+
+  it("keeps those names out of every source file, doc and comment, not just the page copy", () => {
+    const scanned = SCAN_ROOTS.filter((root) => existsSync(root)).flatMap(textUnder);
+    const loose = SCAN_FILES.filter((file) => existsSync(file)).map((file) =>
+      readFileSync(file, "utf8"),
+    );
+    // A guard that read nothing would pass vacuously, so insist on real coverage.
+    expect(scanned.length + loose.length).toBeGreaterThan(120);
+    const haystack = [...scanned, ...loose].join("\n").toLowerCase();
+    for (const name of FORBIDDEN_NAMES) {
+      expect(haystack, name).not.toContain(name);
     }
   });
 });

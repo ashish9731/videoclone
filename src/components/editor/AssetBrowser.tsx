@@ -233,7 +233,7 @@ export function AssetBrowser({ tab, store, width, height, media, audio, captions
       {items.length > 0 && <div className="relative m-3"><Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" /><Input aria-label={`Search ${tab}`} placeholder={`Search ${tab.toLowerCase()}`} value={search} onChange={e => setSearch(e.target.value)} className="h-9 pl-8 text-xs" /></div>}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {tab === 'AI avatar' ? <div className="space-y-3 p-6 text-sm text-muted-foreground"><UserRound className="size-10" /><h2 className="flex items-center gap-2 text-foreground">{PRO_COPY.aiAvatar.title}<ProChip /></h2><p>{PRO_COPY.aiAvatar.body}</p></div>
-          : UNAVAILABLE.has(category) ? <p className="p-5 text-xs text-muted-foreground">{category} is not available. Licensed CapCut packs and unbuilt services are not included.</p>
+          : UNAVAILABLE.has(category) ? <p className="p-5 text-xs text-muted-foreground">{category} is not available. Stock libraries and bundled third-party packs are not included.</p>
           : tab === 'Media' ? media : tab === 'Audio' ? audio : tab === 'Captions' ? captions
           : tab === 'Adjustment' ? selected && hit && !hit.track.locked && selected.kind !== 'audio' ? <div className="space-y-4 p-4"><AdjustPanel c={selected} store={store} up={fn => store.updateClip(selected.id, fn)} /></div> : <p className="p-5 text-xs text-muted-foreground">No unlocked visual clip selected.</p>
           : <><div className="flex items-center justify-between px-3 pb-3"><span className="text-xs font-semibold">{category}</span><span className="text-[10px] text-muted-foreground">{shown.length} presets</span></div>

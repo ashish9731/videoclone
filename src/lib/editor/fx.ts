@@ -2932,7 +2932,7 @@ function applyColorPass(
   x.putImageData(img, 0, 0);
 }
 
-// Original compound looks, not copies of CapCut's licensed catalog.
+// Original compound looks assembled from this engine's own effect primitives.
 const COMPOUNDS: [string, string, FxDef["group"], string[]][] = [
   ["love-bubble", "Love Bubble", "Party", ["hearts", "glow"]],
   ["fireworks", "Fireworks", "Party", ["sparkle", "confetti", "flash"]],

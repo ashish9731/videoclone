@@ -1,4 +1,4 @@
-# Roadmap — CapCut parity overhaul
+# Roadmap — full editor parity overhaul
 - [x] Per-audio-clip draggable volume line, level display and mute; mouse/keyboard controls, persistence and isolated preview/export gain verified.
 - [x] Clean video/image drag/drop and quick-add defaults; independent visual/audio fade durations verified in preview/export.
 - [x] Real green-screen footage verified with eyedropper and tolerance, visible background and retained foreground in UI MP4 export; stabilized preview canvas ref and isolated slider keyboard controls.
