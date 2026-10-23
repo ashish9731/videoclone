@@ -4,6 +4,12 @@ import type { Clip, Timeline, Track } from "./types";
 export interface EditorState {
   timeline: Timeline;
   selectedClipId: string | null;
+  /**
+   * id of the clip whose in-transition is being edited as an object of its own. Only a click on
+   * the transition block sets it, and any other selection clears it (see `set`), so Delete knows
+   * whether it removes a blend or the clip under it.
+   */
+  selectedTransitionOf: string | null;
   time: number;
   playing: boolean;
   pxPerSec: number;
@@ -30,6 +36,7 @@ export class EditorStore {
     this.state = {
       timeline,
       selectedClipId: null,
+      selectedTransitionOf: null,
       time: 0,
       playing: false,
       pxPerSec: 60,
@@ -52,7 +59,13 @@ export class EditorStore {
   }
 
   set(partial: Partial<EditorState>) {
-    this.state = { ...this.state, ...partial };
+    const next = { ...this.state, ...partial };
+    // Selecting anything else - a clip body, an empty lane, a clear - drops the transition
+    // selection, otherwise Del would keep deleting a blend the user stopped pointing at.
+    if (partial.selectedClipId !== undefined && !("selectedTransitionOf" in partial)) {
+      next.selectedTransitionOf = null;
+    }
+    this.state = next;
     this.emit();
   }
 

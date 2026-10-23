@@ -39,6 +39,8 @@
   --color-clip-audio: var(--clip-audio);
   --color-clip-text: var(--clip-text);
   --color-clip-image: var(--clip-image);
+  --color-clip-effect: var(--clip-effect);
+  --color-clip-filter: var(--clip-filter);
   --color-playhead: var(--playhead);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
@@ -83,6 +85,8 @@
   --clip-image: oklch(0.58 0.12 290);
   --clip-audio: oklch(0.6 0.14 155);
   --clip-text: oklch(0.68 0.15 75);
+  --clip-effect: oklch(0.55 0.16 300);
+  --clip-filter: oklch(0.62 0.13 190);
   --playhead: oklch(0.72 0.19 45);
   --chart-1: oklch(0.72 0.19 45);
   --chart-2: oklch(0.6 0.14 155);
@@ -110,6 +114,10 @@
     font-family: var(--font-sans);
     color-scheme: dark;
   }
+  /* landing page anchor navigation */
+  html {
+    scroll-behavior: smooth;
+  }
   h1,
   h2,
   h3 {
@@ -119,4 +127,87 @@
 
 @utility font-display {
   font-family: var(--font-display);
+}
+
+/* ---------- landing page editor mock ----------
+   The hero illustration is CSS-only on purpose: pulling the render engine (or a video file) into
+   the public marketing route would cost the page its first paint for a decoration. */
+@keyframes cutroom-playhead {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(96.5%);
+  }
+}
+@keyframes cutroom-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-7px);
+  }
+}
+@keyframes cutroom-sheen {
+  0% {
+    transform: translateX(-130%) skewX(-12deg);
+    opacity: 0;
+  }
+  35% {
+    opacity: 0.7;
+  }
+  100% {
+    transform: translateX(260%) skewX(-12deg);
+    opacity: 0;
+  }
+}
+@keyframes cutroom-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.95;
+  }
+}
+@keyframes cutroom-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.cutroom-playhead {
+  animation: cutroom-playhead 7s cubic-bezier(0.4, 0, 0.6, 1) infinite alternate;
+}
+.cutroom-float {
+  animation: cutroom-float 6s ease-in-out infinite;
+}
+.cutroom-sheen {
+  animation: cutroom-sheen 5.5s ease-in-out infinite;
+}
+.cutroom-pulse {
+  animation: cutroom-pulse 2.4s ease-in-out infinite;
+}
+.cutroom-marquee {
+  animation: cutroom-marquee 38s linear infinite;
+}
+.cutroom-marquee:hover {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .cutroom-playhead,
+  .cutroom-float,
+  .cutroom-sheen,
+  .cutroom-pulse,
+  .cutroom-marquee {
+    animation: none !important;
+  }
 }

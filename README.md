@@ -1,9 +1,13 @@
 # Cutroom — browser video editor
 
 A CapCut-style multi-track video editor that runs fully in the browser: timeline
-editing, keyframes, transitions, effects, AI captions with translation, and MP4
-export via WebCodecs. Projects and media persist to Supabase (Postgres + private
-storage); video encoding happens client-side with [mediabunny](https://mediabunny.dev).
+editing, keyframes, transitions, effects, caption lanes (SRT/VTT import, manual
+cues, per-line retiming) and MP4 export via WebCodecs. Projects and media persist
+to Supabase (Postgres + private storage); video encoding happens client-side with
+[mediabunny](https://mediabunny.dev). Features that need a hosted model — speech
+to text, caption translation, AI portrait effects, the talking avatar — are wired
+but locked: `src/lib/pro-gate.ts` answers any attempt with "coming soon in the Pro
+version" (see `PRO_AVAILABLE`).
 
 ## Stack
 
@@ -32,7 +36,7 @@ npm run dev
 | --- | --- |
 | `VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY` | Browser Supabase client |
 | `SUPABASE_URL` / `SUPABASE_PUBLISHABLE_KEY` | Server-side Supabase client |
-| `OPENAI_API_KEY` | Optional: transcription + caption translation |
+| `OPENAI_API_KEY` | Transcription + caption translation — Pro-only paths, unreachable while `pro-gate` locks them |
 | `AI_API_BASE_URL` | Optional: any OpenAI-compatible endpoint (default `https://api.openai.com/v1`) |
 | `AI_MODEL` / `AI_TRANSCRIBE_MODEL` | Optional: chat / transcription model names |
 | `DB_MIGRATION_URL` | Drizzle kit migrations (direct DB connection string) |

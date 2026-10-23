@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { type EditorStore, useEditor } from "@/lib/editor/store";
 import { applyAnimated, poseAt } from "@/lib/editor/keyframes";
 import { wrapLines } from "@/lib/editor/render";
-import { type Clip, type MediaAsset, clipDuration, isActive } from "@/lib/editor/types";
+import { type Clip, type MediaAsset, type Timeline, clipDuration, isActive } from "@/lib/editor/types";
 import { Button } from '@/components/ui/button';
 import { Trash2 } from 'lucide-react';
 
@@ -15,9 +15,24 @@ interface Props {
 }
 
 let measureCtx: CanvasRenderingContext2D | null = null;
+type Size = [number, number];
+// Clip objects are replaced on every edit, so the clip itself is a safe cache key; measuring text
+// (font + wrapLines) per playhead tick was costing more than the canvas draw.
+const contentCache = new WeakMap<Clip, { w: number; h: number; size: Size }>();
 
 /** Untransformed content size of a clip, in project units. */
-export function contentSize(c: Clip, assets: Map<string, MediaAsset>, W: number, H: number): [number, number] | null {
+export function contentSize(c: Clip, assets: Map<string, MediaAsset>, W: number, H: number): Size | null {
+  const hit = contentCache.get(c);
+  if (hit && hit.w === W && hit.h === H) return hit.size;
+  const size = measureContentSize(c, assets, W, H);
+  // the video/image fallback (asset metadata not loaded yet) is deliberately not cached
+  if (size && (c.kind === "text" || c.kind === "shape" || (c.assetId ? !!assets.get(c.assetId)?.width && !!assets.get(c.assetId)?.height : false))) {
+    contentCache.set(c, { w: W, h: H, size });
+  }
+  return size;
+}
+
+function measureContentSize(c: Clip, assets: Map<string, MediaAsset>, W: number, H: number): Size | null {
   if (c.kind === "text" && c.text) {
     measureCtx ??= document.createElement("canvas").getContext("2d");
     const ctx = measureCtx;
@@ -47,8 +62,10 @@ export function TransformOverlay({ store, assets, canvas, width, height }: Props
   const rootRef = useRef<HTMLDivElement>(null);
   const [rect, setRect] = useState({ left: 0, top: 0, w: 0, h: 0 });
   const timeline = useEditor(store, (s) => s.timeline);
-  const time = useEditor(store, (s) => s.time);
   const selectedId = useEditor(store, (s) => s.selectedClipId);
+  // Only the selected clip's box has to follow the playhead, so an idle stage stays out of the
+  // per-frame ticks instead of rebuilding this subtree 60x a second.
+  const time = useEditor(store, (s) => (selectedId ? s.time : 0));
   const animate = useEditor(store, (s) => s.animate);
 
   useEffect(() => {
@@ -68,17 +85,21 @@ export function TransformOverlay({ store, assets, canvas, width, height }: Props
 
   const s = rect.w / width; // display px per project unit
 
-  // visual clips active now, top layer first
-  const active: { clip: Clip; locked: boolean }[] = [];
-  for (const tr of timeline.tracks) {
-    if (tr.kind === "audio" || tr.hidden) continue;
-    for (const c of [...tr.clips].reverse()) if (isActive(c, time) && c.kind !== "audio") active.push({ clip: c, locked: tr.locked });
-  }
+  /** Visual clips active at `t`, top layer first. The clip kind decides, not the lane type. */
+  const targetsAt = (tl: Timeline, t: number): { clip: Clip; locked: boolean }[] => {
+    const found: { clip: Clip; locked: boolean }[] = [];
+    for (const tr of tl.tracks) {
+      if (tr.hidden) continue;
+      for (const c of [...tr.clips].reverse()) if (isActive(c, t) && c.kind !== "audio") found.push({ clip: c, locked: tr.locked });
+    }
+    return found;
+  };
+  const active = targetsAt(timeline, time);
 
-  const boxOf = (c: Clip) => {
+  const boxOf = (c: Clip, at = time) => {
     const size = contentSize(c, assets, width, height);
     if (!size) return null;
-    const local = Math.max(0, Math.min(clipDuration(c), time - c.start));
+    const local = Math.max(0, Math.min(clipDuration(c), at - c.start));
     const p = poseAt(c, local);
     return { local, p, w: size[0] * p.scale * s, h: size[1] * p.scale * s, cx: rect.w / 2 + p.x * s, cy: rect.h / 2 + p.y * s };
   };
@@ -92,7 +113,7 @@ export function TransformOverlay({ store, assets, canvas, width, height }: Props
   const startDrag = (e: React.PointerEvent, clip: Clip, mode: Mode) => {
     e.preventDefault();
     e.stopPropagation();
-    const box = boxOf(clip);
+    const box = boxOf(clip, store.get().time);
     if (!box) return;
     store.set({ selectedClipId: clip.id, playing: false });
     store.beginGesture();
@@ -137,8 +158,10 @@ export function TransformOverlay({ store, assets, canvas, width, height }: Props
   // click on the stage: pick the topmost clip under the pointer and start moving it
   const onStageDown = (e: React.PointerEvent) => {
     const pt = toLocal(e);
-    for (const { clip, locked } of active) {
-      const b = boxOf(clip);
+    const now = store.get();
+    // hit-test against the live playhead, not the (possibly gated) render time
+    for (const { clip, locked } of targetsAt(now.timeline, now.time)) {
+      const b = boxOf(clip, now.time);
       if (!b) continue;
       const r = (-b.p.rotation * Math.PI) / 180;
       const dx = pt.x - b.cx, dy = pt.y - b.cy;

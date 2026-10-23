@@ -1,7 +1,7 @@
 import { defaultMask, type MaskProp } from "@/lib/editor/mask";
 import { BLEND_MODES, type BlendMode } from "@/lib/editor/types";
 import { EDITOR_FONTS } from "@/lib/editor/fonts";
-import { useRef } from "react";
+import { memo, useCallback, useRef } from "react";
 import { Diamond, X } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -12,11 +12,16 @@ import { Button } from "@/components/ui/button";
 import { type EditorStore, useEditor } from "@/lib/editor/store";
 import { applyAnimated } from "@/lib/editor/keyframes";
 import { FILTERS, EFFECTS } from "@/lib/editor/fx";
-import { TRANSITIONS, prevAdjacent } from "@/lib/editor/transitions";
+import { TRANSITIONS, maxTransitionDuration, prevAdjacent } from "@/lib/editor/transitions";
+import { removeTransition } from "@/lib/editor/placement";
 import { IN_ANIMS, LOOP_ANIMS, OUT_ANIMS, type AnimDef } from "@/lib/editor/anim";
 import { SHAPES } from "@/lib/editor/shapes";
+import { MOTION_DEFAULT, STICKER_MOTIONS } from "@/lib/editor/stickers";
+import type { ShapeMotion } from "@/lib/editor/types";
 import { FADE_PRESETS } from "@/lib/editor/audio-fx";
 import { SPEED_CURVES } from "@/lib/editor/presets";
+import { announcePro, isProEffect, PRO_COPY } from "@/lib/pro-gate";
+import { ProChip } from "./ProChip";
 import {
   type AnimRef,
   type Clip,
@@ -103,7 +108,7 @@ function Section({ title, children, action }: { title: string; children: React.R
   );
 }
 
-function Tile({ active, onClick, children, title }: { active: boolean; onClick: () => void; children: React.ReactNode; title?: string }) {
+function Tile({ active, onClick, children, title }: { active: boolean; onClick: () => void; children: React.ReactNode; title?: string | undefined }) {
   return (
     <button
       onClick={onClick}
@@ -136,6 +141,7 @@ const TAB_LABEL: Record<string, string> = {
   motion: "Motion",
   filters: "Filters",
   effects: "Effects",
+  effect: "Effect",
   adjust: "Adjust",
   trans: "Transition",
   audio: "Audio",
@@ -153,16 +159,23 @@ function tabsFor(c: Clip): string[] {
       return ["shape", "anim", "motion", "effects", "trans"];
     case "audio":
       return ["audio", "speed"];
+    case "effect":
+      return ["effect"];
+    case "filter":
+      // a grade block is edited as itself: which look, how strong, how long
+      return ["filters"];
   }
 }
 
 export function Inspector({ store, width }: { store: EditorStore; width: number }) {
   const selectedId = useEditor(store, (s) => s.selectedClipId);
-  const time = useEditor(store, (s) => s.time);
   const tabPref = useEditor(store, (s) => s.inspectorTab);
   useEditor(store, (s) => s.timeline);
   const hit = store.findClip(selectedId);
-  if (!hit) {
+  const clip = hit?.clip ?? null;
+  // declared before the early return so the hook order stays identical on every render
+  const up = useCallback((fn: (cl: Clip) => Clip) => { if (clip) store.updateClip(clip.id, fn); }, [store, clip]);
+  if (!hit || !clip) {
     return (
       <div className="p-6 text-center text-sm text-muted-foreground">
         Select a clip on the timeline or the preview to edit it.
@@ -173,17 +186,16 @@ export function Inspector({ store, width }: { store: EditorStore; width: number 
           <div>Ctrl+D — duplicate</div>
           <div>Ctrl+Z / Ctrl+Shift+Z — undo / redo</div>
           <div>← → — step a frame (Shift: 1s)</div>
-          <div>⋈ on the timeline — transition between clips</div>
+          <div>⋈ on the joint in a lane's Transitions band — add one · trim either end, Del removes it</div>
+          <div>Effects, Filters, text and captions each keep their own line — a drop never lands inside the video row</div>
         </div>
       </div>
     );
   }
-  const c = hit.clip;
+  const c = clip;
   const tabs = tabsFor(c);
   const tab = tabs.includes(tabPref) ? tabPref : tabs[0]!;
   const d = clipDuration(c);
-  const local = Math.max(0, Math.min(d, time - c.start));
-  const up = (fn: (c: Clip) => Clip) => store.updateClip(c.id, fn);
 
   return (
     <div className="flex h-full flex-col">
@@ -207,19 +219,20 @@ export function Inspector({ store, width }: { store: EditorStore; width: number 
         ))}
       </div>
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-3" key={c.id + tab}>
-        {tab === "basic" && <BasicPanel c={c} d={d} up={up} store={store} />}
-        {tab === "composite" && <CompositePanel c={c} up={up} store={store} local={local} />}
-        {tab === "crop" && <CropPanel c={c} up={up} store={store} />}
-        {tab === "text" && <TextPanel c={c} d={d} up={up} store={store} />}
-        {tab === "shape" && <ShapePanel c={c} d={d} up={up} store={store} />}
-        {tab === "speed" && <SpeedPanel c={c} up={up} store={store} />}
-        {tab === "anim" && <AnimPanel c={c} d={d} up={up} store={store} />}
-        {tab === "motion" && <MotionPanel c={c} local={local} up={up} store={store} width={width} />}
-        {tab === "filters" && <FilterPanel c={c} up={up} store={store} />}
-        {tab === "effects" && <EffectsPanel c={c} up={up} store={store} />}
-        {tab === "adjust" && <AdjustPanel c={c} up={up} store={store} />}
-        {tab === "trans" && <TransPanel c={c} d={d} up={up} store={store} hasPrev={!!prevAdjacent(hit.track, c)} />}
-        {tab === "audio" && <AudioPanel c={c} d={d} up={up} store={store} />}
+        {tab === "basic" && <MemoBasicPanel c={c} d={d} up={up} store={store} />}
+        {tab === "composite" && <CompositePanel c={c} up={up} store={store} />}
+        {tab === "crop" && <MemoCropPanel c={c} up={up} store={store} />}
+        {tab === "text" && <MemoTextPanel c={c} d={d} up={up} store={store} />}
+        {tab === "shape" && <MemoShapePanel c={c} d={d} up={up} store={store} />}
+        {tab === "speed" && <MemoSpeedPanel c={c} up={up} store={store} />}
+        {tab === "anim" && <MemoAnimPanel c={c} d={d} up={up} store={store} />}
+        {tab === "motion" && <MotionPanel c={c} up={up} store={store} width={width} />}
+        {tab === "filters" && <MemoFilterPanel c={c} d={d} up={up} store={store} />}
+        {tab === "effects" && <MemoEffectsPanel c={c} up={up} store={store} />}
+        {tab === "adjust" && <MemoAdjustPanel c={c} up={up} store={store} />}
+        {tab === "trans" && <MemoTransPanel c={c} d={d} up={up} store={store} prev={prevAdjacent(hit.track, c)} />}
+        {tab === "audio" && <MemoAudioPanel c={c} d={d} up={up} store={store} />}
+        {tab === "effect" && <MemoEffectPanel c={c} up={up} store={store} d={d} />}
       </div>
     </div>
   );
@@ -227,15 +240,52 @@ export function Inspector({ store, width }: { store: EditorStore; width: number 
 
 type P = { c: Clip; up: (fn: (c: Clip) => Clip) => void; store: EditorStore };
 
+/**
+ * Clip-local playhead position. Kept out of the Inspector body on purpose: the panel grid
+ * would otherwise rebuild 60x a second while playing, and only the keyframe panels need it.
+ */
+function useClipLocal(store: EditorStore, c: Clip): number {
+  const time = useEditor(store, (s) => s.time);
+  return Math.max(0, Math.min(clipDuration(c), time - c.start));
+}
+
+/**
+ * Panels only depend on their clip, so memoizing them lets the Inspector take the
+ * per-frame playhead tick without rebuilding the filter/effect tile grids while playing.
+ * (Composite and Motion panels are excluded: they track the exact playhead position.)
+ */
+const MemoBasicPanel = memo(BasicPanel);
+const MemoCropPanel = memo(CropPanel);
+const MemoTextPanel = memo(TextPanel);
+const MemoShapePanel = memo(ShapePanel);
+const MemoSpeedPanel = memo(SpeedPanel);
+const MemoAnimPanel = memo(AnimPanel);
+const MemoFilterPanel = memo(FilterPanel);
+const MemoEffectsPanel = memo(EffectsPanel);
+const MemoAdjustPanel = memo(AdjustPanel);
+const MemoTransPanel = memo(TransPanel);
+const MemoAudioPanel = memo(AudioPanel);
+const MemoEffectPanel = memo(EffectPanel);
+
 function CropPanel({ c, up, store }: P) {
   const crop = c.crop ?? { x: 0, y: 0, w: 1, h: 1 };
   const set = (patch: Partial<typeof crop>) => up(cl => ({ ...cl, crop: { ...crop, ...patch } }));
+  const canVisual = c.kind === "video" || c.kind === "image";
   return <>
+    <p className="text-[11px] text-muted-foreground">
+      Adjust the source rectangle. {canVisual ? "Drag the handles on the preview canvas for visual cropping (this Crop tab is auto-activated)." : ""}
+    </p>
     <Row store={store} label="Crop width" value={crop.w * 100} min={10} max={(1 - crop.x) * 100} suffix="%" onChange={v => set({ w: v / 100 })} />
     <Row store={store} label="Crop height" value={crop.h * 100} min={10} max={(1 - crop.y) * 100} suffix="%" onChange={v => set({ h: v / 100 })} />
     <Row store={store} label="Crop X" value={crop.x * 100} min={0} max={(1 - crop.w) * 100} suffix="%" onChange={v => set({ x: v / 100 })} />
     <Row store={store} label="Crop Y" value={crop.y * 100} min={0} max={(1 - crop.h) * 100} suffix="%" onChange={v => set({ y: v / 100 })} />
-    <Button size="sm" variant="secondary" onClick={() => up(cl => ({ ...cl, crop: undefined }))}>Reset crop</Button>
+    <div className="flex flex-wrap gap-1">
+      <Button size="sm" variant="secondary" onClick={() => up(cl => ({ ...cl, crop: undefined }))}>Full frame</Button>
+      <Button size="sm" variant="ghost" onClick={() => up(cl => ({ ...cl, crop: { x: 0.125, y: 0, w: 0.75, h: 1 } }))}>Left 3/4</Button>
+      <Button size="sm" variant="ghost" onClick={() => up(cl => ({ ...cl, crop: { x: 0.25, y: 0, w: 0.5, h: 1 } }))}>Center half</Button>
+      <Button size="sm" variant="ghost" onClick={() => up(cl => ({ ...cl, crop: { x: 0, y: 0.25, w: 1, h: 0.5 } }))}>Top half</Button>
+      <Button size="sm" variant="ghost" onClick={() => up(cl => ({ ...cl, crop: { x: 0, y: 0.5, w: 1, h: 0.5 } }))}>Bottom half</Button>
+    </div>
   </>;
 }
 
@@ -333,6 +383,9 @@ function ShapePanel({ c, d, up, store }: P & { d: number }) {
   if (!c.shape) return null;
   const s = c.shape;
   const setS = (patch: Partial<typeof s>) => up((cl) => ({ ...cl, shape: { ...cl.shape!, ...patch } }));
+  const motion: ShapeMotion = { ...MOTION_DEFAULT, ...(s.motion ?? {}), style: s.motion?.style || "auto" };
+  const setMotion = (patch: Partial<ShapeMotion>) => setS({ motion: { ...motion, ...patch } });
+  const still = motion.style === "none" || motion.amount === 0;
   return (
     <>
       <div className="grid grid-cols-3 gap-1">
@@ -353,6 +406,37 @@ function ShapePanel({ c, d, up, store }: P & { d: number }) {
       <Row store={store} label="Outline width" value={s.strokeWidth} min={0} max={40} onChange={(v) => setS({ strokeWidth: v })} />
       <Row store={store} label="Width" value={s.w} min={10} max={2000} onChange={(v) => setS({ w: v })} />
       <Row store={store} label="Height" value={s.h} min={10} max={2000} onChange={(v) => setS({ h: v })} />
+      <Section title="Motion">
+        <div className="grid grid-cols-3 gap-1">
+          {STICKER_MOTIONS.map((m) => (
+            <Tile key={m.id} active={motion.style === m.id} onClick={() => setMotion({ style: m.id })} title={m.id === "auto" ? "Keep each sticker's own motion" : undefined}>
+              {m.name}
+            </Tile>
+          ))}
+        </div>
+        <Row store={store} label="Speed" value={motion.speed} min={0.1} max={4} step={0.05} suffix="x" onChange={(v) => setMotion({ speed: v })} />
+        <Row store={store} label="Intensity" value={motion.amount} min={0} max={300} step={5} suffix="%" onChange={(v) => setMotion({ amount: v })} />
+        <p className="text-[11px] text-muted-foreground">
+          {still
+            ? "This sticker is still. Raise Intensity or pick a style to make it move."
+            : "Auto keeps each sticker's own motion; Speed sets how fast the cycle runs and Intensity how far it travels."}
+        </p>
+      </Section>
+      <Section title="Entrance">
+        <div className="grid grid-cols-3 gap-1">
+          {IN_ANIMS.filter((a) => !a.textOnly).map((a) => (
+            <Tile key={a.id} active={c.anim?.in?.id === a.id} onClick={() => up((cl) => ({
+              ...cl,
+              anim: { ...cl.anim, in: cl.anim?.in?.id === a.id ? undefined : { id: a.id, duration: cl.anim?.in?.duration ?? 0.4 } },
+            }))}>
+              {a.name}
+            </Tile>
+          ))}
+        </div>
+        {!!c.anim?.in && (
+          <Row store={store} label="Entrance length" value={c.anim.in.duration} min={0.1} max={3} step={0.05} suffix="s" onChange={(v) => up((cl) => { const cur = cl.anim?.in; return cur ? { ...cl, anim: { ...cl.anim, in: { ...cur, duration: v } } } : cl; })} />
+        )}
+      </Section>
       <Row store={store} label="Duration" value={d} min={0.5} max={60} step={0.1} suffix="s" onChange={(v) => up((cl) => ({ ...cl, out: cl.in + v }))} />
     </>
   );
@@ -523,8 +607,9 @@ function AnimPanel({ c, d, up, store }: P & { d: number }) {
   );
 }
 
-function MotionPanel({ c, local, up, store, width }: P & { local: number; width: number }) {
+function MotionPanel({ c, up, store, width }: P & { width: number }) {
   const EPS = 1 / 60;
+  const local = useClipLocal(store, c);
   const kfValue = (p: KeyframeProp) => interpolate(c.keyframes[p], local, c.transform[p]);
   const kfAt = (p: KeyframeProp) => c.keyframes[p]?.find((k) => Math.abs(k.t - local) < EPS);
   const setProp = (p: KeyframeProp, v: number) => up((cl) => applyAnimated(cl, local, { [p]: v }, store.get().animate));
@@ -610,13 +695,22 @@ function MotionPanel({ c, local, up, store, width }: P & { local: number; width:
   );
 }
 
-function FilterPanel({ c, up, store }: P) {
+function FilterPanel({ c, d, up, store }: P & { d: number }) {
+  const deleteClip = () => {
+    store.update((t) => ({ tracks: t.tracks.map((tr) => ({ ...tr, clips: tr.clips.filter((cl) => cl.id !== c.id) })) }));
+    store.set({ selectedClipId: null });
+  };
   return (
     <>
+      {c.kind === "filter" && (
+        <Section title="Grade block">
+          <Row store={store} label="Length" value={d} min={0.1} max={60} step={0.1} suffix="s" onChange={(v) => up((cl) => ({ ...cl, out: v }))} />
+        </Section>
+      )}
       {c.filter && (
         <Row store={store} label="Intensity" value={c.filter.intensity} min={0} max={100} suffix="%" onChange={(v) => up((cl) => ({ ...cl, filter: { ...cl.filter!, intensity: v } }))} />
       )}
-      <Tile active={!c.filter} onClick={() => up((cl) => ({ ...cl, filter: undefined }))}>No filter</Tile>
+      {c.kind !== "filter" && <Tile active={!c.filter} onClick={() => up((cl) => ({ ...cl, filter: undefined }))}>No filter</Tile>}
       {groups(FILTERS).map(([g, list]) => (
         <Section key={g} title={g}>
           <div className="grid grid-cols-3 gap-1.5">
@@ -634,6 +728,11 @@ function FilterPanel({ c, up, store }: P) {
           </div>
         </Section>
       ))}
+      {c.kind === "filter" && (
+        <div className="pt-2">
+          <Button size="sm" variant="destructive" onClick={deleteClip} className="w-full">Delete Filter</Button>
+        </div>
+      )}
     </>
   );
 }
@@ -645,6 +744,15 @@ function EffectsPanel({ c, up, store }: P) {
       const cur = cl.fx ?? [];
       return { ...cl, fx: cur.some((f) => f.id === id) ? cur.filter((f) => f.id !== id) : [...cur, { id, intensity: id === "bg-remove" ? 100 : 60 }] };
     });
+  // the picker lists the AI portrait group, so trying to add one has to answer rather than drop a
+  // block that cannot render; taking one already applied is never blocked
+  const pick = (id: string) => {
+    if (!fx.some((f) => f.id === id) && isProEffect(id)) {
+      announcePro("aiPortrait");
+      return;
+    }
+    toggle(id);
+  };
   return (
     <>
       {fx.length > 0 && (
@@ -666,26 +774,53 @@ function EffectsPanel({ c, up, store }: P) {
                 suffix="%"
                 onChange={(v) => up((cl) => ({ ...cl, fx: (cl.fx ?? []).map((x) => (x.id === f.id ? { ...x, intensity: v } : x)) }))}
               />
-              <Row store={store} label="Speed" value={f.speed ?? 1} min={0.1} max={4} step={0.1} suffix="×" onChange={v => up(cl => ({ ...cl, fx: (cl.fx ?? []).map(x => x.id === f.id ? { ...x, speed: v } : x) }))} />
+              <Row store={store} label="Speed" value={f.speed ?? 1} min={0.1} max={4} step={0.1} suffix="\u00d7" onChange={v => up(cl => ({ ...cl, fx: (cl.fx ?? []).map(x => x.id === f.id ? { ...x, speed: v } : x) }))} />
               <Row store={store} label="Blend" value={f.blend ?? 100} min={0} max={100} suffix="%" onChange={v => up(cl => ({ ...cl, fx: (cl.fx ?? []).map(x => x.id === f.id ? { ...x, blend: v } : x) }))} />
             </div>
           ))}
         </Section>
       )}
-      {groups(EFFECTS.filter(e => e.group !== 'AI portrait')).map(([g, list]) => (
+      {groups(EFFECTS).map(([g, list]) => (
         <Section key={g} title={g}>
           <div className="grid grid-cols-3 gap-1">
             {list.map((e) => (
-              <Tile key={e.id} active={fx.some((f) => f.id === e.id)} onClick={() => toggle(e.id)}>{e.name}</Tile>
+              <Tile key={e.id} active={fx.some((f) => f.id === e.id)} onClick={() => pick(e.id)} title={isProEffect(e.id) ? PRO_COPY.aiPortrait.title : undefined}>
+                <span className="flex items-center gap-1 truncate">{e.name}{isProEffect(e.id) && <ProChip />}</span>
+              </Tile>
             ))}
           </div>
           {g === "AI portrait" && (
             <p className="text-[11px] text-muted-foreground">
-              Finds the person in each frame on your device. The first use downloads a small model, so the effect appears after a few seconds.
+              {PRO_COPY.aiPortrait.title}. {PRO_COPY.aiPortrait.body}
             </p>
           )}
         </Section>
       ))}
+    </>
+  );
+}
+
+function EffectPanel({ c, up, store, d }: P & { d: number }) {
+  const f = c.fx?.[0];
+  if (!f) return <p className="text-xs text-muted-foreground">No effect data.</p>;
+  const fxUp = (patch: Partial<typeof f>) => up((cl) => ({ ...cl, fx: (cl.fx ?? []).map((x, i) => i === 0 ? { ...x, ...patch } : x) }));
+  const deleteClip = () => {
+    store.update((t) => ({ tracks: t.tracks.map((tr) => ({ ...tr, clips: tr.clips.filter((cl) => cl.id !== c.id) })) }));
+    store.set({ selectedClipId: null });
+  };
+  return (
+    <>
+      <Section title={EFFECTS.find((e) => e.id === f.id)?.name ?? f.id}>
+        <Row store={store} label="Intensity" value={f.intensity} min={0} max={100} suffix="%" onChange={(v) => fxUp({ intensity: v })} />
+        <Row store={store} label="Speed" value={f.speed ?? 1} min={0.1} max={4} step={0.1} suffix="\u00d7" onChange={(v) => fxUp({ speed: v })} />
+        <Row store={store} label="Blend" value={f.blend ?? 100} min={0} max={100} suffix="%" onChange={(v) => fxUp({ blend: v })} />
+      </Section>
+      <Section title="Duration">
+        <Row store={store} label="Length" value={d} min={0.1} max={30} step={0.1} suffix="s" onChange={(v) => up((cl) => ({ ...cl, out: v }))} />
+      </Section>
+      <div className="pt-2">
+        <Button size="sm" variant="destructive" onClick={deleteClip} className="w-full">Delete Effect</Button>
+      </div>
     </>
   );
 }
@@ -737,9 +872,13 @@ export function AdjustPanel({ c, up, store }: P) {
   );
 }
 
-function TransPanel({ c, d, up, store, hasPrev }: P & { d: number; hasPrev: boolean }) {
+function TransPanel({ c, d, up, store, prev }: P & { d: number; prev: Clip | null }) {
+  const hasPrev = !!prev;
   const block = (key: "transitionIn" | "transitionOut", title: string, hint: string) => {
     const tr = c[key];
+    // a blend can only be as long as the material around the join, and it must not run past the
+    // clip it reveals; the clip's own length is never touched, so the ceiling is all about footage
+    const ceiling = (cl: Clip) => maxTransitionDuration(key === "transitionIn" ? prev : null, cl);
     return (
       <Section title={title}>
         <p className="text-[11px] text-muted-foreground">{hint}</p>
@@ -749,7 +888,7 @@ function TransPanel({ c, d, up, store, hasPrev }: P & { d: number; hasPrev: bool
             <Tile
               key={t.id}
               active={tr?.type === t.id}
-              onClick={() => up((cl) => ({ ...cl, [key]: { type: t.id, duration: cl[key]?.duration ?? Math.min(0.8, d / 2) } }))}
+              onClick={() => up((cl) => ({ ...cl, [key]: { type: t.id, duration: Math.min(cl[key]?.duration ?? 0.8, ceiling(cl)) } }))}
             >
               {t.name}
             </Tile>
@@ -759,13 +898,18 @@ function TransPanel({ c, d, up, store, hasPrev }: P & { d: number; hasPrev: bool
           <Row
             store={store}
             label="Duration"
-            value={tr.duration}
+            value={Math.min(tr.duration, ceiling(c))}
             min={0.1}
-            max={Math.max(0.2, Math.min(5, d))}
+            max={Math.max(0.2, ceiling(c))}
             step={0.05}
             suffix="s"
             onChange={(v) => up((cl) => ({ ...cl, [key]: { ...cl[key]!, duration: v } }))}
           />
+        )}
+        {tr && (
+          <Button size="sm" variant="ghost" onClick={() => (key === "transitionIn" ? removeTransition(store, c.id) : up((cl) => ({ ...cl, [key]: undefined })))}>
+            Remove {key === "transitionIn" ? "transition" : "out transition"}
+          </Button>
         )}
       </Section>
     );
@@ -775,7 +919,9 @@ function TransPanel({ c, d, up, store, hasPrev }: P & { d: number; hasPrev: bool
       {block(
         "transitionIn",
         hasPrev ? "Transition from previous clip" : "In transition",
-        hasPrev ? "Blends the clip before this one into this clip." : "Reveals this clip over whatever is below it (black on the bottom track).",
+        hasPrev
+          ? "Blends the clip before this one into this clip. It is its own block on the timeline, centred on the joint, and trimming either end leaves both clips exactly as long as they were."
+          : "Reveals this clip over whatever is below it (black on the bottom track).",
       )}
       {block("transitionOut", "Out transition", "Plays at the end of this clip when nothing transitions in after it.")}
     </>
@@ -815,7 +961,8 @@ function AudioPanel({ c, d, up, store }: P & { d: number }) {
   );
 }
 
-function CompositePanel({ c, up, store, local }: P & { local: number }) {
+function CompositePanel({ c, up, store }: P) {
+  const local = useClipLocal(store, c);
   const key = c.chroma ?? { enabled: false, color: '#00ff00', tolerance: .15, softness: .1, spill: .5 };
   const setKey = (patch: Partial<typeof key>) => up(cl => ({ ...cl, chroma: { ...(cl.chroma ?? key), ...patch } }));
   const m = c.mask ?? defaultMask();

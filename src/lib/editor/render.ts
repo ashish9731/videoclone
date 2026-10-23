@@ -2,10 +2,10 @@ import { applyKey } from "./key";
 import { visualFadeAt } from './clip-controls';
 import { applyMask } from "./mask";
 import { animState } from "./anim";
-import { blurInPlace, clear, ctx2d, poolCanvas, processLayer } from "./fx";
+import { applyGlobalFx, blurInPlace, clear, ctx2d, gradeFrame, pixelate, poolCanvas, processLayer } from "./fx";
 import { drawShape } from "./shapes";
 import { drawTransition, nextAdjacent, prevAdjacent } from "./transitions";
-import { type CaptionTrack, type Clip, type Timeline, clipDuration, interpolate, isActive } from "./types";
+import { type CaptionTrack, type Clip, type Timeline, type Track, clipDuration, interpolate, isActive, isVisualClip } from "./types";
 
 export type SourceGetter = (clip: Clip) => CanvasImageSource | null;
 
@@ -31,6 +31,22 @@ export function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxW: num
     out.push(line);
   }
   return out;
+}
+
+type LineCache = { key: string; maxW: number; text: string; lines: string[] };
+const lineCache = new WeakMap<object, LineCache>();
+
+/**
+ * Line breaking is word-by-word measurement, and the same text style object is drawn on every
+ * frame of a clip; the style object is replaced on any edit, so caching it is self-invalidating.
+ * `key` has to describe everything that changes measurement (font, letter spacing).
+ */
+function cachedLines(style: object, ctx: CanvasRenderingContext2D, text: string, key: string, maxW: number): string[] {
+  const hit = lineCache.get(style);
+  if (hit && hit.key === key && hit.maxW === maxW && hit.text === text) return hit.lines;
+  const lines = wrapLines(ctx, text, maxW);
+  lineCache.set(style, { key, maxW, text, lines });
+  return lines;
 }
 
 interface TextOpts {
@@ -163,7 +179,7 @@ export function renderClipLayer(
     const ls = (s.letterSpacing ?? 0) * k;
     const xl = x as CanvasRenderingContext2D & { letterSpacing?: string };
     if ("letterSpacing" in xl) xl.letterSpacing = `${ls}px`;
-    const lines = wrapLines(x, s.content, W * 0.9);
+    const lines = cachedLines(s, x, s.content, `${textFont(s, size)}|${ls}px`, W * 0.9);
     let mw = 0;
     for (const l of lines) mw = Math.max(mw, x.measureText(l).width);
     wipeBox(mw + size, lines.length * size * 1.25 + size);
@@ -180,7 +196,7 @@ export function renderClipLayer(
     drew = true;
   } else if (c.kind === "shape" && c.shape) {
     wipeBox(c.shape.w * k, c.shape.h * k);
-    drawShape(x, c.shape, k);
+    drawShape(x, c.shape, k, kl);
     drew = true;
   } else {
     const src = getSource(c);
@@ -202,7 +218,7 @@ export function renderClipLayer(
 
   if (a.blur > 0.3) blurInPlace(L, a.blur * s1080);
   applyKey(L, c.chroma);
-  const post = processLayer(L, c.effects, c.filter, c.fx, Math.max(0, local), s1080);
+  const post = processLayer(L, c.effects, c.filter, c.fx, Math.max(0, local), s1080, d);
   if (post.dx || post.dy || post.scale !== 1 || post.rotation) {
     const tmp = poolCanvas(key + "-post", W, H);
     clear(tmp);
@@ -220,6 +236,29 @@ export function renderClipLayer(
   return L;
 }
 
+/**
+ * Standalone effect clips active at time t, ordered bottom-to-top (lowest z first).
+ * A block repaints the whole frame, so its lane is irrelevant - only visibility matters.
+ */
+export function activeEffectClips(timeline: Timeline, t: number): Clip[] {
+  const out: Clip[] = [];
+  const tracks = timeline.tracks.filter((tr) => !tr.hidden);
+  for (let i = tracks.length - 1; i >= 0; i--) {
+    const tr = tracks[i]!;
+    for (const c of tr.clips) if (c.kind === "effect" && isActive(c, t)) out.push(c);
+  }
+  return out;
+}
+
+/**
+ * The grade blocks a lane is asking to be painted at time t. Unlike an effect block, a filter is
+ * applied where its lane sits in the stack: it recolours the picture built at and below that line
+ * and leaves the overlays drawn above it alone, which is what putting it on a line means.
+ */
+export function gradeBlocksInLane(tr: Track, t: number): Clip[] {
+  return tr.clips.filter((c) => c.kind === "filter" && c.filter !== undefined && isActive(c, t));
+}
+
 export function renderFrame(ctx: CanvasRenderingContext2D, timeline: Timeline, t: number, getSource: SourceGetter, o: RenderOptions) {
   const { width: W, height: H } = o;
   ctx.save();
@@ -230,12 +269,14 @@ export function renderFrame(ctx: CanvasRenderingContext2D, timeline: Timeline, t
   ctx.fillStyle = "#000";
   ctx.fillRect(0, 0, W, H);
 
-  // bottom track renders first; tracks[0] is the top layer
-  const visual = timeline.tracks.filter((tr) => tr.kind !== "audio" && !tr.hidden);
+  // bottom track renders first; tracks[0] is the top layer. Which clips draw is decided by
+  // the clip's own kind, never by the lane type, so a visual clip or an effect block works
+  // on every lane (effect blocks composite as full-frame passes after the base image).
+  const visual = timeline.tracks.filter((tr) => !tr.hidden);
   for (let i = visual.length - 1; i >= 0; i--) {
     const tr = visual[i]!;
     for (const c of tr.clips) {
-      if (c.kind === "audio" || !isActive(c, t)) continue;
+      if (!isVisualClip(c) || !isActive(c, t)) continue;
       ctx.globalCompositeOperation = c.blend ?? "source-over";
       const d = clipDuration(c);
       const local = t - c.start;
@@ -257,9 +298,33 @@ export function renderFrame(ctx: CanvasRenderingContext2D, timeline: Timeline, t
       }
       if (L) ctx.drawImage(L, 0, 0);
     }
+    // Grade blocks recolour the picture built so far, so a filter reaches the material at and
+    // below its own lane and leaves the overlays above it alone - which is where the user put it.
+    for (const c of gradeBlocksInLane(tr, t)) {
+      if (c.filter) gradeFrame(ctx.canvas, c.filter);
+    }
   }
 
   ctx.globalCompositeOperation = "source-over";
+
+  // Global effect blocks: apply full-frame to the composited image, before captions.
+  const effectClips = activeEffectClips(timeline, t);
+  if (effectClips.length) {
+    const frame = poolCanvas("global-frame", W, H);
+    const fxc = ctx2d(frame);
+    clear(frame);
+    fxc.drawImage(ctx.canvas, 0, 0, W, H);
+    for (const ec of effectClips) applyGlobalFx(frame, ec.fx ?? [], Math.max(0, t - ec.start), H / 1080, clipDuration(ec));
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
+    ctx.filter = "none";
+    ctx.clearRect(0, 0, W, H);
+    ctx.drawImage(frame, 0, 0);
+    ctx.restore();
+  }
+
   // captions on top
   if (o.captions) {
     for (const ct of o.captions) {
@@ -270,9 +335,10 @@ export function renderFrame(ctx: CanvasRenderingContext2D, timeline: Timeline, t
       const size = s.fontSize * (H / 1080);
       ctx.save();
       ctx.globalAlpha = 1;
-      ctx.font = `${s.bold ? "700" : "400"} ${size}px "${s.fontFamily}", sans-serif`;
       const text = s.uppercase ? cue.text.toUpperCase() : cue.text;
-      const lines = wrapLines(ctx, text, W * 0.82);
+      const font = `${s.bold ? "700" : "400"} ${size}px "${s.fontFamily}", sans-serif`;
+      ctx.font = font;
+      const lines = cachedLines(s, ctx, text, font, W * 0.82);
       drawTextBlock(ctx, lines, W / 2, H * s.position, size, {
         color: s.color,
         background: s.background,

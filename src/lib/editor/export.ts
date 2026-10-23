@@ -24,6 +24,7 @@ import {
   type MediaAsset,
   type Timeline,
   clipEnd,
+  isVisualClip,
   sourceTime,
   timelineDuration,
 } from "./types";
@@ -106,10 +107,12 @@ export async function exportVideo(o: ExportOptions): Promise<Blob> {
   }
   await output.start();
 
-  // each visual clip stays decodable through its outgoing transition tail
+  // each visual clip stays decodable through its outgoing transition tail; effect blocks
+  // repaint the composited frame in renderFrame and never carry source frames of their own.
+  // The lane type never decides this - export must read exactly what renderFrame draws.
   const visualClips: { c: Clip; end: number }[] = timeline.tracks
-    .filter((tr) => tr.kind !== "audio" && !tr.hidden)
-    .flatMap((tr) => tr.clips.map((c) => ({ c, end: clipEnd(c) + outgoingTail(tr, c) })));
+    .filter((tr) => !tr.hidden)
+    .flatMap((tr) => tr.clips.filter(isVisualClip).map((c) => ({ c, end: clipEnd(c) + outgoingTail(tr, c) })));
   const endOf = new Map(visualClips.map((v) => [v.c.id, v.end]));
   const frames = new Map<string, ClipFrames>();
   const images = new Map<string, HTMLImageElement>();

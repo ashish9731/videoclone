@@ -51,7 +51,7 @@ describe('catalog integrity', () => {
   it('every sticker and transition belongs to a known group', () => {
     const stickerGroups = new Set<string>(ART_STICKERS.map((s) => s.group));
     expect(stickerGroups.size).toBeGreaterThan(4);
-    const transitionGroups = new Set(['Basic', 'Slide', 'Wipe', 'Camera', 'Effects', 'Shape']);
+    const transitionGroups = new Set(['Basic', 'Slide', 'Wipe', 'Camera', 'Effects', 'Shape', '3D', 'Film', 'Flash']);
     for (const t of TRANSITIONS) expect(transitionGroups.has(t.group)).toBe(true);
   });
 });

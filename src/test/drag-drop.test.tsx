@@ -2,7 +2,8 @@ import { fireEvent, render, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { EditorStore } from "@/lib/editor/store";
 import { type MediaAsset, defaultTimeline } from "@/lib/editor/types";
-import { ASSET_MIME, Timeline } from "@/components/editor/Timeline";
+import { Timeline } from "@/components/editor/Timeline";
+import { ASSET_MIME } from "@/components/editor/library-drag";
 import { MediaPanel } from "@/components/editor/MediaPanel";
 
 // Radix (Slider, DropdownMenu) measures with ResizeObserver, which jsdom lacks.

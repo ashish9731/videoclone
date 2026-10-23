@@ -3,9 +3,8 @@ import { insertFreeze, trimAtPlayhead } from '@/lib/editor/edit-actions';
 import { clipFromAsset, sourceTime, clipDuration, defaultEffects } from '@/lib/editor/types';
 import { adjustMatrix, isIdent } from '@/lib/editor/fx';
 import { EditorStore } from '@/lib/editor/store';
-import { addClipToTimeline } from '@/components/editor/Timeline';
 import { shapeClip } from '@/lib/editor/presets';
-import { presetTarget, visiblePresetTime } from '@/lib/editor/placement';
+import { addClipToTimeline, presetTarget, visiblePresetTime } from '@/lib/editor/placement';
 const video = () => clipFromAsset({ id: 'v', name: 'v', kind: 'video', storage_path: 'x', mime: 'video/webm', size_bytes: 1, duration: 10, width: 640, height: 360, project_id: null }, 0);
 describe('timeline toolbar edits', () => {
   it('presets target video at the playhead without requiring selection', () => {

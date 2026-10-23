@@ -19,7 +19,8 @@ function audible(c: Clip) {
 /** Clips that cause ducking: audible clips that are not themselves set to duck. */
 export function voiceClips(timeline: Timeline, exclude: string): Clip[] {
   return timeline.tracks
-    .filter((tr) => tr.kind !== "text" && !tr.muted)
+    // every lane counts - `audible` reads the clip's own kind, so sound works wherever it sits
+    .filter((tr) => !tr.muted)
     .flatMap((tr) => tr.clips)
     .filter((c) => c.id !== exclude && audible(c) && !(c.duck && c.duck > 0));
 }

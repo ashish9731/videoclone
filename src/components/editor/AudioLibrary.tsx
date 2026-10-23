@@ -4,7 +4,8 @@ import { SOUNDS, renderSound, encodeWav, type Sound } from '@/lib/editor/sfx';
 import { uploadMedia } from '@/lib/editor/media';
 import { clipFromAsset, type MediaAsset } from '@/lib/editor/types';
 import type { EditorStore } from '@/lib/editor/store';
-import { addClipToTimeline } from './Timeline';
+import { useEditor } from '@/lib/editor/store';
+import { addClipToTimeline } from '@/lib/editor/placement';
 
 function Waveform({ sound, getBuffer }: { sound: Sound; getBuffer: (s: Sound) => Promise<AudioBuffer> }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -34,6 +35,18 @@ export function AudioLibrary({ store, userId, projectId, onAdded }: { store: Edi
   const [category, setCategory] = useState('All'), [search, setSearch] = useState(''), [playing, setPlaying] = useState<string | null>(null), [busy, setBusy] = useState<string | null>(null);
   const context = useRef<AudioContext | null>(null), source = useRef<AudioBufferSourceNode | null>(null), request = useRef(0), adding = useRef(false);
   const stop = () => { request.current++; source.current?.stop(); source.current = null; setPlaying(null); };
+  // a sound effect preview is not part of the edit: any play/pause of the timeline mutes it so the
+  // library can never keep sounding while the preview itself is stopped
+  const transport = useEditor(store, (s) => s.playing);
+  const lastTransport = useRef(transport);
+  useEffect(() => {
+    if (lastTransport.current === transport) return;
+    lastTransport.current = transport;
+    request.current++;
+    source.current?.stop();
+    source.current = null;
+    setPlaying(null);
+  }, [transport]);
   useEffect(() => () => { request.current++; source.current?.stop(); void context.current?.close(); }, []);
   const preview = async (sound: Sound) => {
     const wasPlaying = playing === sound.id; stop(); if (wasPlaying) return;

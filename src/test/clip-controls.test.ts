@@ -3,7 +3,7 @@ import { clipFromAsset, defaultEffects, newTrack, type MediaAsset } from '@/lib/
 import { fadeEnvelope, visualFadeAt, volumeFromLine } from '@/lib/editor/clip-controls';
 import { clipGainAt } from '@/lib/editor/audio-fx';
 import { EditorStore } from '@/lib/editor/store';
-import { addClipToTimeline } from '@/components/editor/Timeline';
+import { addClipToTimeline } from '@/lib/editor/placement';
 
 const asset: MediaAsset = { id: 'a', name: 'test', storage_path: 'test', project_id: null, kind: 'video', mime: 'video/webm', size_bytes: 1, duration: 4, width: 320, height: 180 };
 describe('clean media insertion', () => {

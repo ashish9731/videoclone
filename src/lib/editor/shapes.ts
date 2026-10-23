@@ -1,5 +1,5 @@
 import type { ShapeStyle } from "./types";
-import { drawSticker } from './stickers';
+import { applyStickerMotion, drawSticker } from './stickers';
 
 export const SHAPES: { id: string; name: string }[] = [
   { id: "rect", name: "Rectangle" },
@@ -87,14 +87,18 @@ function path(x: CanvasRenderingContext2D, type: string, w: number, h: number) {
 }
 
 /** Draw a shape centered at the origin; k = canvas px per project unit. */
-export function drawShape(x: CanvasRenderingContext2D, s: ShapeStyle, k: number) {
-  if (s.type.startsWith('sticker:')) { drawSticker(x, s, k); return; }
+export function drawShape(x: CanvasRenderingContext2D, s: ShapeStyle, k: number, t = 0) {
+  if (s.type.startsWith('sticker:')) { drawSticker(x, s, k, t); return; }
   const w = s.w * k, h = s.h * k;
+  x.save();
+  // Plain shapes share the sticker motion catalog; their travel is measured off the drawn box.
+  applyStickerMotion(x, s.type, t, s.motion, Math.min(w, h) / 200);
   path(x, s.type, w, h);
   if (s.type === "ring") {
     x.lineWidth = Math.max(2, Math.min(w, h) * 0.12);
     x.strokeStyle = s.fill;
     x.stroke();
+    x.restore();
     return;
   }
   if (s.fill) {
@@ -107,4 +111,5 @@ export function drawShape(x: CanvasRenderingContext2D, s: ShapeStyle, k: number)
     x.strokeStyle = s.stroke;
     x.stroke();
   }
+  x.restore();
 }

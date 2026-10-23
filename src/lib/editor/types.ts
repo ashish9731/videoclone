@@ -1,5 +1,5 @@
 export type MediaKind = "video" | "audio" | "image";
-export type TrackKind = "video" | "audio" | "text";
+export type TrackKind = "video" | "audio" | "text" | "effect" | "filter";
 /** id from TRANSITIONS in transitions.ts (legacy ids "zoom"/"wipe" are aliased there) */
 export type TransitionType = string;
 export type KeyframeProp = "x" | "y" | "scale" | "rotation" | "opacity";
@@ -63,6 +63,16 @@ export interface ClipAnim {
   loop?: AnimRef | undefined;
 }
 
+/** Looping motion applied by the sticker/shape renderer itself (not the clip transform). */
+export interface ShapeMotion {
+  /** STICKER_MOTIONS id; "" = the artwork's built-in motion, "none" = still */
+  style: string;
+  /** cycle rate multiplier (0.1 - 4) */
+  speed: number;
+  /** amplitude as a percentage of the artwork's own motion (0 - 300) */
+  amount: number;
+}
+
 export interface ShapeStyle {
   type: string; // see SHAPES in shapes.ts
   fill: string;
@@ -70,6 +80,7 @@ export interface ShapeStyle {
   strokeWidth: number;
   w: number;
   h: number;
+  motion?: ShapeMotion | undefined;
 }
 
 export interface Transform {
@@ -106,7 +117,7 @@ export type BlendMode = typeof BLEND_MODES[number];
 
 export interface Clip {
   id: string;
-  kind: MediaKind | "text" | "shape";
+  kind: MediaKind | "text" | "shape" | "effect" | "filter";
   assetId?: string | undefined;
   name: string;
   start: number; // timeline seconds
@@ -313,6 +324,22 @@ export function timelineDuration(t: Timeline): number {
   return d;
 }
 
+/**
+ * The last moment that still paints a picture. Clip spans are half-open (`isActive` stops at
+ * `clipEnd`), so the timeline's own duration is one frame past the final image: resting a playhead
+ * there - where playback lands when it runs out - would show an empty stage instead of the scene
+ * that just ended.
+ */
+export function lastFrameTime(timeline: Timeline, fps: number): number {
+  return Math.max(0, timelineDuration(timeline) - 1 / Math.max(1, fps));
+}
+
+/** Where a seek or a step may leave the playhead: on a frame that exists, never past it. */
+export function clampPlayhead(time: number, timeline: Timeline, fps: number): number {
+  if (!isFinite(time) || time < 0) return 0;
+  return Math.min(time, lastFrameTime(timeline, fps));
+}
+
 /** Map a timeline time to the source time for a clip (extrapolates past the clip end at the end speed). */
 export function sourceTime(c: Clip, t: number): number {
   if (c.freezeAt !== undefined) return c.freezeAt;
@@ -337,6 +364,15 @@ export function subCurve(curve: SpeedPoint[], a: number, b: number): SpeedPoint[
 
 export function isActive(c: Clip, t: number): boolean {
   return t >= c.start && t < clipEnd(c);
+}
+
+/**
+ * Clips that draw a frame layer and can therefore take part in a seam transition.
+ * Placement is lane-free, so this reads the clip's own kind, never the track kind:
+ * audio clips make sound only, effect blocks repaint the whole frame from wherever they sit.
+ */
+export function isVisualClip(c: Clip): boolean {
+  return c.kind === "video" || c.kind === "image" || c.kind === "text" || c.kind === "shape";
 }
 
 /** Linear keyframe interpolation; falls back to base value when no keyframes. */
@@ -488,7 +524,8 @@ export function parseSubtitles(text: string): CaptionCue[] {
 }
 
 export function newTrack(kind: TrackKind, index: number): Track {
-  const label = kind === "video" ? "Video" : kind === "audio" ? "Audio" : "Text";
+  const label =
+    kind === "video" ? "Video" : kind === "audio" ? "Audio" : kind === "effect" ? "Effects" : kind === "filter" ? "Filters" : "Text";
   return { id: uid(), kind, name: `${label} ${index}`, muted: false, hidden: false, locked: false, clips: [] };
 }
 
@@ -535,6 +572,41 @@ export function textClip(start: number): Clip {
     transform: defaultTransform(),
     keyframes: {},
     text: defaultTextStyle(),
+  };
+}
+
+/** A standalone, trimmable full-frame effect block placed on an effect track. */
+export function effectClip(fxId: string, name: string, start: number, duration: number): Clip {
+  return {
+    id: uid(),
+    kind: "effect",
+    name,
+    start,
+    in: 0,
+    out: Math.max(0.1, duration),
+    sourceDuration: STILL_SOURCE_DURATION,
+    speed: 1,
+    volume: 0,
+    fadeIn: 0,
+    fadeOut: 0,
+    effects: defaultEffects(),
+    transform: defaultTransform(),
+    keyframes: {},
+    fx: [{ id: fxId, intensity: 75 }],
+  };
+}
+
+/**
+ * A grade block: its own timeline object on a Filters lane, recolouring the picture for exactly
+ * its own span. It carries the same `filter` reference a clip grade uses, so the colour maths in
+ * preview, export and the gallery stay one implementation.
+ */
+export function filterClip(filterId: string, name: string, start: number, duration: number): Clip {
+  return {
+    ...effectClip(filterId, name, start, duration),
+    kind: "filter",
+    fx: undefined,
+    filter: { id: filterId, intensity: 100 },
   };
 }
 

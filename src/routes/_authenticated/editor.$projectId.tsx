@@ -215,7 +215,16 @@ function EditorPage() {
       </div>
 
       <div className="h-[300px] shrink-0 border-t">
-        <Timeline store={store} assets={assets} />
+        <Timeline
+          store={store}
+          assets={assets}
+          width={p.width}
+          height={p.height}
+          fps={p.fps}
+          captions={captions}
+          onUpdateCaption={updateCaption}
+          onActiveCaption={setActiveCap}
+        />
       </div>
 
       <ExportDialog

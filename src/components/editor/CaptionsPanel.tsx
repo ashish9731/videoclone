@@ -26,9 +26,11 @@ import {
   uid,
 } from "@/lib/editor/types";
 import { FONTS } from "./Inspector";
+import { ProChip } from "./ProChip";
+import { announcePro, proLocked, PRO_COPY } from "@/lib/pro-gate";
 import { cn } from "@/lib/utils";
 import { editCue } from '@/lib/editor/caption-edit';
-import { addClipToTimeline } from './Timeline';
+import { addClipToTimeline } from '@/lib/editor/placement';
 
 interface Props {
   store: EditorStore;
@@ -42,15 +44,26 @@ interface Props {
 }
 
 export function CaptionsPanel({ store, assets, tracks, activeId, setActiveId, createTrack, updateTrack, deleteTrack }: Props) {
-  const time = useEditor(store, (s) => s.time);
   const [job, setJob] = useState<{ p: number; label: string } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [target, setTarget] = useState("es");
   const translate = useServerFn(translateCues);
   const active = tracks.find((t) => t.id === activeId) ?? null;
+  // Subscribe to the cue under the playhead, not to the raw time: this list can hold hundreds of
+  // rows and re-rendering it on every playhead tick is what made playback stutter with captions.
+  const currentCueId = useEditor(store, (s) => {
+    for (const cue of active?.cues ?? []) if (s.time >= cue.start && s.time < cue.end) return cue.id;
+    return "";
+  });
 
   const generate = async () => {
+    // speech-to-text is a service this build does not ship: say so instead of starting a job that
+    // cannot finish. The pipeline below stays wired for the day the Pro flag flips.
+    if (proLocked("autoCaptions")) {
+      announcePro("autoCaptions");
+      return;
+    }
     const ac = new AbortController();
     abortRef.current = ac;
     setJob({ p: 0, label: "Preparing audio" });
@@ -67,6 +80,10 @@ export function CaptionsPanel({ store, assets, tracks, activeId, setActiveId, cr
   };
 
   const runTranslate = async () => {
+    if (proLocked("captionTranslate")) {
+      announcePro("captionTranslate");
+      return;
+    }
     if (!active || !active.cues.length) return;
     const ac = new AbortController();
     abortRef.current = ac;
@@ -118,7 +135,7 @@ export function CaptionsPanel({ store, assets, tracks, activeId, setActiveId, cr
     active &&
     updateTrack(active.id, (t) => ({
       ...t,
-      cues: [...t.cues, { id: uid(), start: time, end: time + 2, text: "" }].sort((a, b) => a.start - b.start),
+      cues: [...t.cues, { id: uid(), start: store.get().time, end: store.get().time + 2, text: "" }].sort((a, b) => a.start - b.start),
     }));
 
   const downloadSrt = () => {
@@ -162,8 +179,13 @@ export function CaptionsPanel({ store, assets, tracks, activeId, setActiveId, cr
       <div className="space-y-2 border-b p-3">
         <Button className="w-full" onClick={generate} disabled={!!job}>
           <Sparkles className="mr-2 h-4 w-4" /> Auto-generate captions
+          {proLocked("autoCaptions") && <ProChip className="ml-2" title={PRO_COPY.autoCaptions.title} />}
         </Button>
-        <p className="text-[11px] text-muted-foreground">Transcribes the spoken audio on your timeline into timed captions.</p>
+        <p className="text-[11px] text-muted-foreground">
+          {proLocked("autoCaptions")
+            ? PRO_COPY.autoCaptions.title
+            : "Transcribes the spoken audio on your timeline into timed captions."}
+        </p>
         <div className="grid grid-cols-2 gap-2">
           <Button
             size="sm"
@@ -263,6 +285,7 @@ export function CaptionsPanel({ store, assets, tracks, activeId, setActiveId, cr
               </Select>
               <Button size="sm" variant="secondary" onClick={runTranslate} disabled={!!job || !active.cues.length}>
                 <Languages className="mr-1 h-3.5 w-3.5" /> Translate
+                {proLocked("captionTranslate") && <ProChip className="ml-1.5" title={PRO_COPY.captionTranslate.title} />}
               </Button>
             </div>
             <Button size="sm" variant="ghost" className="w-full" onClick={downloadSrt} disabled={!active.cues.length}>
@@ -326,7 +349,7 @@ export function CaptionsPanel({ store, assets, tracks, activeId, setActiveId, cr
               </Button>
             </div>
             {active.cues.map((c) => {
-              const on = time >= c.start && time < c.end;
+              const on = c.id === currentCueId;
               return (
                 <div key={c.id} className={cn("space-y-1 rounded-md border p-2", on && "border-primary")}>
                   <div className="flex items-center gap-1 font-mono text-[10px]">

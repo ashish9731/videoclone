@@ -57,7 +57,9 @@ export async function mixTimelineAudio(
   const total = timelineDuration(timeline);
   if (total <= 0) return null;
   const audible = timeline.tracks
-    .filter((tr) => !tr.muted && tr.kind !== "text")
+    // lanes are not sound-type buckets: the clip kind below decides what decodes, so audio
+    // mixed from a media lane sounds identical to audio on a dedicated track
+    .filter((tr) => !tr.muted)
     .flatMap((tr) => tr.clips)
     .filter((c) => (c.kind === "video" || c.kind === "audio") && c.freezeAt === undefined && c.volume > 0 && c.assetId);
   if (audible.length === 0) return null;

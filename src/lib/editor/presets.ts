@@ -1,5 +1,9 @@
 import { EDITOR_FONTS } from "./fonts";
+import { defaultShapeMotion } from "./stickers";
 import { type Clip, type SpeedPoint, type TextStyle, STILL_SOURCE_DURATION, TEXT_DEFAULT_DURATION, defaultEffects, defaultTransform, textClip, uid } from "./types";
+
+/** Entrance length for newly added stickers/shapes; the timeline seeks just past it. */
+export const STICKER_ENTRANCE_DURATION = 0.2;
 
 export interface TextTemplate {
   id: string;
@@ -80,7 +84,17 @@ export function shapeClip(type: string, start: number, fill = "#ff6a1a"): Clip {
     effects: defaultEffects(),
     transform: defaultTransform(),
     keyframes: {},
-    shape: { type, fill, stroke: "#ffffff", strokeWidth: 0, w: type === "line" ? 500 : 320, h: type === "line" ? 40 : type === "arrow" ? 200 : 320 },
+    // Every sticker/shape arrives moving: a short entrance plus its looping motion.
+    anim: { in: { id: "pop", duration: STICKER_ENTRANCE_DURATION } },
+    shape: {
+      type,
+      fill,
+      stroke: "#ffffff",
+      strokeWidth: 0,
+      w: type === "line" ? 500 : 320,
+      h: type === "line" ? 40 : type === "arrow" ? 200 : 320,
+      motion: defaultShapeMotion(type),
+    },
   };
 }
 

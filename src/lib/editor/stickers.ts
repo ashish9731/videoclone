@@ -1,5 +1,5 @@
 import { GENERATED_STICKERS, drawGeneratedSticker } from "./sticker-gen";
-import type { ShapeStyle } from './types';
+import type { ShapeMotion, ShapeStyle } from './types';
 
 export const ART_STICKERS = [
   ...GENERATED_STICKERS,
@@ -54,11 +54,308 @@ export const ART_STICKERS = [
   { id: 'target', name: 'Target', group: 'Symbols', fill: '#ff5b5b' },
   { id: 'headphones', name: 'Headphones', group: 'Music', fill: '#5b8def' },
   { id: 'mic', name: 'Microphone', group: 'Music', fill: '#9aa7bd' },
+  // Film / camera (doc category C)
+  { id: 'rec-dot', name: 'REC Indicator', group: 'Film', fill: '#ff3b3b' },
+  { id: 'film-strip', name: 'Film Strip', group: 'Film', fill: '#1f1f23' },
+  { id: 'timecode', name: 'Timecode', group: 'Film', fill: '#12161c' },
+  { id: 'viewfinder', name: 'Viewfinder', group: 'Film', fill: '#ffffff' },
+  { id: 'clapper', name: 'Clapperboard', group: 'Film', fill: '#20232b' },
+  // Travel / vlog (doc category D)
+  { id: 'airplane', name: 'Airplane', group: 'Travel', fill: '#d7e5f2' },
+  { id: 'suitcase', name: 'Suitcase', group: 'Travel', fill: '#c98b5e' },
+  { id: 'passport', name: 'Passport', group: 'Travel', fill: '#3b4f8a' },
+  { id: 'ticket', name: 'Ticket', group: 'Travel', fill: '#ffcf6b' },
+  { id: 'postcard', name: 'Postcard', group: 'Travel', fill: '#f6efe3' },
+  { id: 'mountain', name: 'Mountain', group: 'Travel', fill: '#5c7fa8' },
+  // Love / relationship (doc category E)
+  { id: 'rose', name: 'Rose', group: 'Love', fill: '#e0365f' },
+  { id: 'ring', name: 'Wedding Ring', group: 'Love', fill: '#e9c46a' },
+  { id: 'cupid', name: 'Cupid Arrow', group: 'Love', fill: '#ff5b7f' },
+  { id: 'love-lock', name: 'Love Lock', group: 'Love', fill: '#ff6b9d' },
+  // Spiritual / devotional (doc category F)
+  { id: 'diya', name: 'Diya Lamp', group: 'Spiritual', fill: '#d97b3a' },
+  { id: 'lotus', name: 'Lotus', group: 'Spiritual', fill: '#f39ec1' },
+  { id: 'om', name: 'Om Symbol', group: 'Spiritual', fill: '#ffb703' },
+  { id: 'mandala', name: 'Mandala', group: 'Spiritual', fill: '#c8a2ff' },
+  { id: 'incense', name: 'Incense', group: 'Spiritual', fill: '#a67c52' },
+  // Gaming / streamer (doc category G)
+  { id: 'controller', name: 'Game Controller', group: 'Gaming', fill: '#7c5cff' },
+  { id: 'trophy', name: 'Trophy', group: 'Gaming', fill: '#ffcf3f' },
+  { id: 'level-up', name: 'Level Up', group: 'Gaming', fill: '#4ade80' },
+  { id: 'pixel-heart', name: 'Pixel Heart', group: 'Gaming', fill: '#ff4d6d' },
+  { id: 'neon-bolt', name: 'Neon Bolt', group: 'Gaming', fill: '#22d3ee' },
+  // Social / call-to-action (doc category I)
+  { id: 'thumbs-up', name: 'Thumbs Up', group: 'Social', fill: '#3b82f6' },
+  { id: 'bell', name: 'Notification Bell', group: 'Social', fill: '#f59e0b' },
+  { id: 'play-btn', name: 'Play Button', group: 'Social', fill: '#ff0000' },
+  { id: 'subscribe', name: 'Subscribe', group: 'Social', fill: '#ef4444' },
+  { id: 'share', name: 'Share Node', group: 'Social', fill: '#22c55e' },
+  // Comic / meme (doc category J)
+  { id: 'boom', name: 'Boom Burst', group: 'Comic', fill: '#ffd166' },
+  { id: 'pow', name: 'Pow Burst', group: 'Comic', fill: '#ef476f' },
+  { id: 'comic-panel', name: 'Comic Panel', group: 'Comic', fill: '#ffffff' },
+  { id: 'halftone', name: 'Halftone Dots', group: 'Comic', fill: '#111827' },
+  // Labels / banners (doc category L)
+  { id: 'new-badge', name: 'New Badge', group: 'Labels', fill: '#ff4757' },
+  { id: 'sale-tag', name: 'Sale Tag', group: 'Labels', fill: '#ffd32a' },
+  { id: 'breaking-news', name: 'Breaking News', group: 'Labels', fill: '#c0392b' },
+  { id: 'lower-third', name: 'Lower Third', group: 'Labels', fill: '#1e293b' },
+  { id: 'loading-bar', name: 'Loading Bar', group: 'Labels', fill: '#4f7cff' },
 ] as const;
 
-/** Original illustrated sticker artwork. Coordinates are authored in a 200-unit square. */
-export function drawSticker(x: CanvasRenderingContext2D, s: ShapeStyle, k: number) {
+/** Per-sticker motion profile. Applied inside drawSticker so every sticker animates on the timeline.
+ *  - spin: constant rotation (rad / s)
+ *  - pulse: fractional scale oscillation amplitude
+ *  - pulseRate: oscillation speed (rad / s)
+ *  - bounce: vertical bob amplitude (source units)
+ *  - bounceRate: bob speed
+ *  - wobble: rotation oscillation amplitude (rad)
+ *  - wobbleRate: rotation oscillation speed
+ *  - flicker: alpha modulation strength (0..1)
+ *  - drift: horizontal sway amplitude
+ *  - float: slow upward travel + reset cycle for particles/hearts (source units)
+ */
+type Motion = { spin?: number; pulse?: number; pulseRate?: number; bounce?: number; bounceRate?: number; wobble?: number; wobbleRate?: number; flicker?: number; drift?: number; float?: number };
+const MOTION: Record<string, Motion> = {
+  // Animated / emotive faces
+  'happy': { wobble: 0.08, wobbleRate: 2.2, bounce: 4, bounceRate: 3 },
+  'laughing': { wobble: 0.14, wobbleRate: 5 },
+  'kiss': { pulse: 0.05, pulseRate: 3 },
+  'cool': { bounce: 3, bounceRate: 2 },
+  'surprised': { pulse: 0.08, pulseRate: 4 },
+  'heart-eyes': { pulse: 0.07, pulseRate: 3.2 },
+  // Love
+  'heart': { pulse: 0.09, pulseRate: 3.5, float: 8 },
+  'broken-heart': { wobble: 0.05, wobbleRate: 1.5 },
+  'love': { bounce: 3, bounceRate: 2 },
+  'rose': { wobble: 0.06, wobbleRate: 1.2 },
+  'ring': { spin: 0.35 },
+  'cupid': { drift: 4, bounce: 3, bounceRate: 2 },
+  'love-lock': { wobble: 0.04, wobbleRate: 3 },
+  // Weather / nature
+  'sun': { spin: 0.4, pulse: 0.04, pulseRate: 2 },
+  'moon': { wobble: 0.06, wobbleRate: 1 },
+  'rainbow': { pulse: 0.03, pulseRate: 1.5 },
+  'cloud': { drift: 6 },
+  'snowflake': { spin: 0.9 },
+  'leaf': { wobble: 0.15, wobbleRate: 1.5, drift: 4 },
+  'flower': { spin: 0.25, pulse: 0.03, pulseRate: 2 },
+  'butterfly': { bounce: 12, bounceRate: 3.5, drift: 8, wobble: 0.1, wobbleRate: 6 },
+  'daisy': { spin: 0.2 },
+  'fish': { drift: 10, wobble: 0.08, wobbleRate: 3 },
+  'mushroom': { bounce: 3, bounceRate: 2 },
+  'cactus': { wobble: 0.03, wobbleRate: 1 },
+  // Fire / energy
+  'flame': { flicker: 0.15, pulse: 0.08, pulseRate: 6 },
+  'lightning': { flicker: 0.35, pulse: 0.05, pulseRate: 8 },
+  // Party
+  'balloon': { bounce: 10, bounceRate: 1.5, drift: 4 },
+  'gift': { wobble: 0.06, wobbleRate: 3 },
+  'party': { pulse: 0.06, pulseRate: 4 },
+  'rocket': { bounce: 6, bounceRate: 4, wobble: 0.04, wobbleRate: 5 },
+  // Symbols
+  'star': { pulse: 0.1, pulseRate: 3, spin: 0.15 },
+  'peace': { wobble: 0.05, wobbleRate: 1.2 },
+  'skull': { wobble: 0.04, wobbleRate: 2 },
+  'gem': { pulse: 0.06, pulseRate: 2, spin: 0.2 },
+  'speech': { bounce: 4, bounceRate: 2.5 },
+  'target': { pulse: 0.04, pulseRate: 2.5 },
+  'crown': { pulse: 0.04, pulseRate: 1.8 },
+  'check': { pulse: 0.1, pulseRate: 3.5 },
+  // Music
+  'music': { bounce: 6, bounceRate: 2.5, wobble: 0.1, wobbleRate: 3 },
+  'headphones': { wobble: 0.05, wobbleRate: 2 },
+  'mic': { bounce: 3, bounceRate: 3 },
+  // Animal
+  'cat': { wobble: 0.05, wobbleRate: 1.5, bounce: 3, bounceRate: 2 },
+  'paw': { bounce: 5, bounceRate: 4 },
+  // Food
+  'pizza': { wobble: 0.04, wobbleRate: 2 },
+  'donut': { spin: 0.3 },
+  'ice-cream': { wobble: 0.05, wobbleRate: 1.5 },
+  'coffee': { bounce: 3, bounceRate: 2, drift: 2 },
+  'watermelon': { wobble: 0.05, wobbleRate: 1.8 },
+  'burger': { bounce: 3, bounceRate: 1.5 },
+  'cherry': { bounce: 5, bounceRate: 2.5 },
+  'avocado': { wobble: 0.04, wobbleRate: 1.5 },
+  'cupcake': { bounce: 3, bounceRate: 2 },
+  // Film / camera
+  'rec-dot': { flicker: 0.5, pulse: 0.08, pulseRate: 4 },
+  'film-strip': { drift: 12 },
+  'timecode': { flicker: 0.1 },
+  'viewfinder': { pulse: 0.02, pulseRate: 2 },
+  'clapper': { wobble: 0.06, wobbleRate: 2 },
+  'camera': { wobble: 0.03, wobbleRate: 1.2 },
+  // Travel
+  'airplane': { drift: 12, bounce: 4, bounceRate: 1.5 },
+  'suitcase': { wobble: 0.05, wobbleRate: 2 },
+  'passport': { bounce: 3, bounceRate: 1.5 },
+  'ticket': { wobble: 0.04, wobbleRate: 2 },
+  'postcard': { wobble: 0.06, wobbleRate: 1.2 },
+  'mountain': { pulse: 0.02, pulseRate: 1 },
+  // Spiritual
+  'diya': { flicker: 0.25, pulse: 0.05, pulseRate: 5 },
+  'lotus': { pulse: 0.05, pulseRate: 1.2, spin: 0.1 },
+  'om': { pulse: 0.07, pulseRate: 1.8 },
+  'mandala': { spin: 0.35 },
+  'incense': { drift: 3, wobble: 0.02, wobbleRate: 1 },
+  // Gaming
+  'controller': { wobble: 0.05, wobbleRate: 3 },
+  'trophy': { pulse: 0.06, pulseRate: 2.5, bounce: 3, bounceRate: 3 },
+  'level-up': { bounce: 8, bounceRate: 2.5 },
+  'pixel-heart': { pulse: 0.1, pulseRate: 4 },
+  'neon-bolt': { flicker: 0.3, pulse: 0.08, pulseRate: 6 },
+  // Social
+  'thumbs-up': { bounce: 5, bounceRate: 3, wobble: 0.06, wobbleRate: 3 },
+  'bell': { wobble: 0.15, wobbleRate: 4.5 },
+  'play-btn': { pulse: 0.08, pulseRate: 3 },
+  'subscribe': { pulse: 0.06, pulseRate: 2.5 },
+  'share': { bounce: 3, bounceRate: 2 },
+  // Comic
+  'boom': { pulse: 0.18, pulseRate: 6, spin: 0.25 },
+  'pow': { pulse: 0.2, pulseRate: 7, spin: -0.3 },
+  'comic-panel': { wobble: 0.03, wobbleRate: 2 },
+  'halftone': { drift: 4 },
+  // Labels
+  'new-badge': { spin: 0.5, pulse: 0.05, pulseRate: 3 },
+  'sale-tag': { wobble: 0.12, wobbleRate: 3 },
+  'breaking-news': { flicker: 0.15, pulse: 0.03, pulseRate: 4 },
+  'lower-third': { drift: 6 },
+  'loading-bar': { drift: 8 },
+};
+
+/** Fallback motion for anything without an explicit entry (e.g. vector-* generated stickers). */
+function defaultMotion(id: string): Motion | undefined {
+  if (id.startsWith('vector-')) {
+    const parts = id.split('-');
+    const family = Number(parts[1] ?? 0) | 0;
+    const variant = Number(parts[2] ?? 0) | 0;
+    const spinFams = new Set([1, 4, 7, 8]); // Arrows, Shapes, Celebration, Icons
+    if (spinFams.has(family)) return { spin: 0.2 + (variant % 6) * 0.08, pulse: 0.04, pulseRate: 2 + (variant % 4) * 0.5 };
+    if (family === 3) return { wobble: 0.06, wobbleRate: 2 + (variant % 3) }; // Bubbles
+    if (family === 6) return { drift: 5 + (variant % 4) * 2, bounce: 4, bounceRate: 1.5 + (variant % 3) }; // Weather
+    return { pulse: 0.05 + (variant % 4) * 0.02, pulseRate: 2.5, wobble: 0.04, wobbleRate: 1.5 };
+  }
+  return { pulse: 0.04, pulseRate: 2, wobble: 0.03, wobbleRate: 1.5 };
+}
+
+/**
+ * Looping motion styles offered in the inspector, on top of each artwork's built-in profile.
+ * Every style is a pure function of clip-local time so preview, export and gallery
+ * thumbnails animate identically. Translations are in artwork units (the artwork spans
+ * roughly -100..100), scaled by `u` when the caller draws in canvas pixels.
+ */
+type MotionFn = (x: CanvasRenderingContext2D, t: number, a: number, u: number) => void;
+const TAU = Math.PI * 2;
+
+const MOTION_STYLES: Record<string, { name: string; fn: MotionFn }> = {
+  bob: { name: "Bob", fn: (x, t, a, u) => { const y = Math.sin(t * 2.6); x.translate(0, -y * 10 * a * u); } },
+  bounce: { name: "Bounce", fn: (x, t, a, u) => {
+    // abs-sine hop with squash & stretch around the landing frame
+    const ph = (t * 2.2) % Math.PI;
+    const hop = Math.abs(Math.sin(ph));
+    const near = Math.exp(-Math.pow((ph < Math.PI / 2 ? ph : Math.PI - ph) * 4, 2));
+    const sy = 1 + (hop * 0.06 - near * 0.16) * a, sx = 1 - (hop * 0.06 - near * 0.16) * a * 0.7;
+    x.translate(0, -hop * 22 * a * u); x.scale(sx, sy);
+  } },
+  swing: { name: "Swing", fn: (x, t, a) => { x.rotate(Math.sin(t * 1.8) * 0.28 * a); } },
+  wiggle: { name: "Wiggle", fn: (x, t, a) => { x.rotate(Math.sin(t * 9) * 0.12 * a); x.translate(Math.sin(t * 9 + 1) * 2 * a, 0); } },
+  spin: { name: "Spin", fn: (x, t, a) => { x.rotate(t * 1.6 * a); } },
+  pulse: { name: "Pulse", fn: (x, t, a) => { const s = 1 + Math.sin(t * 3.4) * 0.12 * a; x.scale(s, s); } },
+  heartbeat: { name: "Heartbeat", fn: (x, t, a) => {
+    const k = ((t * 1.4) % 1 + 1) % 1;
+    const thump = k < 0.16 ? Math.sin((k / 0.16) * Math.PI) : k < 0.34 ? Math.sin(((k - 0.16) / 0.18) * Math.PI) * 0.6 : 0;
+    x.scale(1 + thump * 0.18 * a, 1 + thump * 0.18 * a);
+  } },
+  jelly: { name: "Jelly", fn: (x, t, a) => { const w = Math.sin(t * 5.2) * 0.14 * a; x.scale(1 + w, 1 - w); } },
+  drift: { name: "Drift", fn: (x, t, a, u) => { x.translate(Math.sin(t * 1.1) * 16 * a * u, Math.cos(t * 0.7) * 5 * a * u); } },
+  orbit: { name: "Orbit", fn: (x, t, a, u) => { x.translate(Math.cos(t * 1.9) * 14 * a * u, Math.sin(t * 1.9) * 14 * a * u); } },
+  float: { name: "Float", fn: (x, t, a, u) => {
+    // slow rise that fades out and restarts, for hearts/sparkle-style stickers
+    const span = 4.5, k = (((t / span) % 1) + 1) % 1;
+    x.translate(Math.sin(k * TAU * 1.5) * 8 * a * u, -k * 90 * a * u);
+    x.globalAlpha = x.globalAlpha * Math.max(0.05, Math.sin(k * Math.PI) ** 0.6);
+  } },
+  shake: { name: "Shake", fn: (x, t, a, u) => { x.translate(Math.sin(t * 26) * 5 * a * u, Math.cos(t * 21) * 5 * a * u); } },
+  blink: { name: "Blink", fn: (x, t, a) => { x.globalAlpha = x.globalAlpha * (1 - a * (0.5 + 0.5 * Math.sin(t * 12))); } },
+  flash: { name: "Flash", fn: (x, t, a) => { x.globalAlpha = x.globalAlpha * (Math.floor(t * 4) % 2 === 0 ? 1 : 1 - 0.8 * a); } },
+  pop: { name: "Pop", fn: (x, t, a) => {
+    // repeatedly pops in with an overshoot, then holds
+    const k = (((t / 2.4) % 1) + 1) % 1, c1 = 1.70158, c3 = c1 + 1;
+    const back = 1 + c3 * Math.pow(k - 1, 3) + c1 * Math.pow(k - 1, 2);
+    const s = 1 - a * 0.55 + a * 0.55 * Math.max(0, back);
+    x.scale(s, s);
+  } },
+  wave: { name: "Wave", fn: (x, t, a) => { x.transform(1, 0, Math.sin(t * 2.8) * 0.18 * a, 1, 0, 0); } },
+  tilt: { name: "Tilt", fn: (x, t, a) => { x.rotate((t % 3) / 3 * TAU * 0.12 * a); x.scale(1 + Math.sin(t * 2) * 0.06 * a, 1 + Math.sin(t * 2) * 0.06 * a); } },
+  gleam: { name: "Gleam", fn: (x, t, a) => { const s = 1 + Math.max(0, Math.sin(t * 1.6)) ** 6 * 0.22 * a; x.scale(s, s); x.globalAlpha = x.globalAlpha * (0.85 + 0.15 * Math.abs(Math.sin(t * 1.6))); } },
+};
+
+/** "Auto" keeps the artwork's own profile, "none" freezes it; both stay selectable in the UI. */
+export const STICKER_MOTIONS: { id: string; name: string }[] = [
+  { id: "auto", name: "Auto" },
+  ...Object.keys(MOTION_STYLES).map((id) => ({ id, name: MOTION_STYLES[id]!.name })),
+  { id: "none", name: "Still" },
+];
+export const MOTION_DEFAULT: ShapeMotion = { style: "auto", speed: 1, amount: 100 };
+
+/** Plain shapes have no authored profile, so they get a looping style picked deterministically per shape. */
+const SHAPE_MOTIONS = ["bob", "swing", "pulse", "jelly", "drift", "pop", "gleam", "tilt"];
+export function defaultShapeMotion(type: string): ShapeMotion {
+  if (type.startsWith("sticker:")) return { ...MOTION_DEFAULT };
+  const h = [...type].reduce((n, c) => n + c.charCodeAt(0), 0) % SHAPE_MOTIONS.length;
+  return { style: SHAPE_MOTIONS[h]!, speed: 1, amount: 100 };
+}
+
+const clampSpeed = (v: number | undefined) => Math.max(0.1, Math.min(4, v ?? 1));
+const clampAmount = (v: number | undefined) => Math.max(0, Math.min(3, (v ?? 100) / 100));
+
+function applyBuiltinMotion(x: CanvasRenderingContext2D, id: string, t: number, a: number, u: number) {
+  const m = MOTION[id] ?? defaultMotion(id);
+  if (!m) return;
+  if (m.spin) x.rotate(m.spin * t * a);
+  if (m.wobble) x.rotate(Math.sin(t * (m.wobbleRate ?? 2)) * m.wobble * a);
+  const pulse = m.pulse ? 1 + Math.sin(t * (m.pulseRate ?? 3)) * m.pulse * a : 1;
+  if (pulse !== 1) x.scale(pulse, pulse);
+  // Bounce/drift are stored in normalized units; multiply to make them clearly visible at thumbnail and full-frame scales.
+  const by = m.bounce ? Math.sin(t * (m.bounceRate ?? 2)) * m.bounce * 4 * a * u : 0;
+  const dx = m.drift ? Math.sin(t * 0.9) * m.drift * 4 * a * u : 0;
+  if (by || dx) x.translate(dx, -by);
+  if (m.float) {
+    const cycle = ((t * 30) % 120) * a;
+    x.translate(0, -cycle * u);
+    x.globalAlpha = Math.max(0.15, 1 - cycle / 120);
+  }
+  if (m.flicker) x.globalAlpha = Math.max(0.1, 1 - m.flicker * a * (0.5 + 0.5 * Math.sin(t * 20)));
+}
+
+/**
+ * Animate a sticker/shape for clip-local time `t`.
+ * `motion.style` picks a catalog style ("auto" = the artwork's own profile, "none" = still);
+ * speed stretches time and amount scales every amplitude, so 0 freezes any artwork.
+ * `u` converts artwork units into the current transform space (1 for stickers drawn in unit space).
+ */
+export function applyStickerMotion(
+  x: CanvasRenderingContext2D,
+  id: string,
+  t: number,
+  motion?: ShapeMotion | undefined,
+  u = 1,
+) {
+  const amount = clampAmount(motion?.amount);
+  if (amount <= 0 || motion?.style === "none") return;
+  const time = t * clampSpeed(motion?.speed);
+  const style = motion?.style && motion.style !== "auto" ? motion.style : "";
+  const def = style ? MOTION_STYLES[style] : undefined;
+  if (style && !def) return; // unknown id from an older project: stay still rather than guess
+  if (def) def.fn(x, time, amount, u);
+  else applyBuiltinMotion(x, id, time, amount, u);
+}
+
+export function drawSticker(x: CanvasRenderingContext2D, s: ShapeStyle, k: number, t = 0) {
   x.save(); x.scale(s.w * k / 200, s.h * k / 200);
+  const __id = s.type.replace('sticker:', '');
+  applyStickerMotion(x, __id, t, s.motion);
   const ink = s.strokeWidth > 0 ? s.stroke : '#20232b';
   x.lineJoin = 'round'; x.lineCap = 'round'; x.lineWidth = 5 + s.strokeWidth / 2;
   const poly = (pts: number[][], fill: string, stroke = '#ffffff') => {
@@ -224,6 +521,178 @@ export function drawSticker(x: CanvasRenderingContext2D, s: ShapeStyle, k: numbe
     x.beginPath();x.roundRect(-30,-84,60,110,28);x.fillStyle=s.fill;x.fill();x.strokeStyle='#ffffff';x.stroke();
     for(let r=0;r<3;r++)for(let c=0;c<3;c++)oval(-16+c*16,-64+r*16,3,3,'#5a6577','#5a6577');
     x.beginPath();x.arc(0,-16,50,0.1*Math.PI,0.9*Math.PI);x.strokeStyle=ink;x.lineWidth=8;x.stroke();line([[0,26],[0,58]],ink,8);line([[-30,58],[30,58]],ink,8);
+  } else if(id==='rec-dot') {
+    oval(-56,0,20,20,s.fill,s.fill);
+    x.fillStyle='#ffffff';x.font='bold 42px system-ui';x.textAlign='left';x.textBaseline='middle';x.fillText('REC',-24,2);
+  } else if(id==='film-strip') {
+    x.fillStyle=s.fill;x.fillRect(-88,-60,176,120);x.strokeStyle='#ffffff';x.lineWidth=4;x.strokeRect(-88,-60,176,120);
+    x.fillStyle='#ffffff';for(let i=0;i<6;i++){x.fillRect(-80+i*30,-52,16,10);x.fillRect(-80+i*30,42,16,10);}
+    x.fillStyle='#4a4a55';for(let i=0;i<3;i++)x.fillRect(-70+i*50,-30,40,60);
+  } else if(id==='timecode') {
+    x.fillStyle=s.fill;x.beginPath();x.roundRect(-88,-40,176,80,10);x.fill();
+    x.fillStyle='#ff5b5b';x.font='bold 40px ui-monospace, monospace';x.textAlign='center';x.textBaseline='middle';x.fillText('00\u2009:00\u2009:12',0,2);
+  } else if(id==='viewfinder') {
+    x.strokeStyle=s.fill;x.lineWidth=10;x.lineCap='round';
+    const L=36;[[-80,-80,1,1],[80,-80,-1,1],[-80,80,1,-1],[80,80,-1,-1]].forEach(([px,py,sx,sy])=>{x.beginPath();x.moveTo(px!,(py!+L*(sy??1)));x.lineTo(px!,py!);x.lineTo((px!+L*(sx??1)),py!);x.stroke();});
+    x.beginPath();x.arc(0,0,10,0,Math.PI*2);x.stroke();
+  } else if(id==='clapper') {
+    poly([[-82,-10],[82,-10],[82,70],[-82,70]],s.fill,'#ffffff');
+    x.save();x.translate(0,-30);x.rotate(-0.06);for(let i=0;i<6;i++){poly([[-82+i*30,-16],[-52+i*30,-16],[-62+i*30,16],[-92+i*30,16]],i%2?'#ffffff':'#20232b','#000000');}x.restore();
+  } else if(id==='airplane') {
+    poly([[-70,20],[40,20],[75,0],[40,-20],[-70,-20],[-40,0]],s.fill,'#8fa3bd');
+    poly([[-10,-20],[15,-70],[35,-70],[25,-20]],'#8fa3bd','#5a6577');poly([[-10,20],[15,70],[35,70],[25,20]],'#8fa3bd','#5a6577');
+    oval(50,-4,6,6,'#4b5b75','#4b5b75');
+  } else if(id==='suitcase') {
+    x.beginPath();x.roundRect(-70,-40,140,110,14);x.fillStyle=s.fill;x.fill();x.strokeStyle='#8a5a3a';x.lineWidth=5;x.stroke();
+    x.beginPath();x.roundRect(-26,-64,52,26,10);x.strokeStyle='#8a5a3a';x.lineWidth=8;x.stroke();
+    line([[-70,10],[70,10]],'#8a5a3a',5);
+    x.fillStyle='#e6c79a';x.fillRect(-16,-30,32,20);x.fillRect(-16,30,32,20);
+  } else if(id==='passport') {
+    x.beginPath();x.roundRect(-60,-80,120,160,8);x.fillStyle=s.fill;x.fill();x.strokeStyle='#1a2a5c';x.stroke();
+    oval(0,-20,26,26,'#e8d9a0','#e8d9a0');
+    x.fillStyle='#e8d9a0';x.font='bold 16px system-ui';x.textAlign='center';x.fillText('PASSPORT',0,42);
+    line([[-40,60],[40,60]],'#e8d9a0',3);
+  } else if(id==='ticket') {
+    x.beginPath();x.moveTo(-84,-40);x.lineTo(64,-40);x.bezierCurveTo(88,-40,88,40,64,40);x.lineTo(-84,40);x.bezierCurveTo(-64,40,-64,-40,-84,-40);x.closePath();x.fillStyle=s.fill;x.fill();x.strokeStyle='#8a6a1e';x.stroke();
+    x.setLineDash([6,6]);x.strokeStyle='#8a6a1e';x.lineWidth=3;x.beginPath();x.moveTo(30,-36);x.lineTo(30,36);x.stroke();x.setLineDash([]);
+    x.fillStyle='#3a2a10';x.font='bold 20px system-ui';x.textAlign='center';x.fillText('ADMIT',-20,-4);x.fillText('ONE',-20,18);
+  } else if(id==='postcard') {
+    x.beginPath();x.rect(-88,-60,176,120);x.fillStyle=s.fill;x.fill();x.strokeStyle='#a89a80';x.lineWidth=4;x.stroke();
+    x.fillStyle='#5c9ed6';x.fillRect(42,-50,38,32);x.strokeStyle='#a89a80';x.strokeRect(42,-50,38,32);
+    line([[-78,-14],[22,-14]],'#c9b89a',3);line([[-78,4],[22,4]],'#c9b89a',3);line([[-78,22],[22,22]],'#c9b89a',3);
+    poly([[-70,32],[-30,-2],[10,32]],'#8fbb6a','#5a8a4a');
+  } else if(id==='mountain') {
+    poly([[-88,50],[-20,-50],[30,10],[60,-30],[88,50]],s.fill,'#3a5478');
+    poly([[-20,-50],[-8,-24],[-32,-24]],'#ffffff','#d7e5f2');poly([[60,-30],[70,-10],[50,-10]],'#ffffff','#d7e5f2');
+    oval(58,-58,14,14,'#ffcf3f','#e6b422');
+  } else if(id==='rose') {
+    poly([[-8,-30],[8,-30],[16,72],[-16,72]],'#4a8b3f','#2f6a2a');
+    line([[0,-30],[0,60]],'#2f6a2a',3);
+    poly([[22,10],[62,4],[42,32]],'#4a8b3f','#2f6a2a');poly([[-22,26],[-62,20],[-42,48]],'#4a8b3f','#2f6a2a');
+    oval(0,-44,32,32,s.fill,'#8a1e38');
+    x.beginPath();x.arc(0,-44,22,Math.PI,2*Math.PI);x.strokeStyle='#8a1e38';x.lineWidth=4;x.stroke();
+    x.beginPath();x.arc(-10,-50,14,0,Math.PI*2);x.strokeStyle='#8a1e38';x.lineWidth=3;x.stroke();
+    x.beginPath();x.arc(12,-38,12,0,Math.PI*2);x.stroke();
+  } else if(id==='ring') {
+    x.strokeStyle='#a08a5c';x.lineWidth=10;x.beginPath();x.arc(0,20,42,0,Math.PI*2);x.stroke();
+    x.strokeStyle=s.fill;x.lineWidth=6;x.beginPath();x.arc(0,20,42,0,Math.PI*2);x.stroke();
+    poly([[-22,-30],[22,-30],[0,-8]],s.fill,'#8a6a1e');poly([[-22,-30],[-10,-56],[10,-56],[22,-30]],'#e8f4ff','#a0c4e0');
+    line([[-10,-56],[0,-30],[10,-56]],'#a0c4e0',2);
+  } else if(id==='cupid') {
+    line([[-70,60],[70,-60]],'#5a4634',6);
+    poly([[70,-60],[46,-56],[60,-40],[78,-42]],s.fill,'#8a1e38');
+    poly([[-70,60],[-70,42],[-52,54]],s.fill,'#8a1e38');poly([[-70,60],[-88,60],[-78,42]],s.fill,'#8a1e38');
+    x.beginPath();x.arc(-40,-40,42,Math.PI*0.15,Math.PI*0.85);x.strokeStyle='#8a4b2b';x.lineWidth=6;x.stroke();
+    heart(-30,-30,32,'#ff3b5c');
+  } else if(id==='love-lock') {
+    x.beginPath();x.arc(0,-30,32,Math.PI,2*Math.PI);x.strokeStyle='#a8a8b8';x.lineWidth=10;x.stroke();
+    x.beginPath();x.roundRect(-52,-8,104,80,12);x.fillStyle=s.fill;x.fill();x.strokeStyle='#a03a5c';x.stroke();
+    heart(0,26,42,'#ffffff');
+  } else if(id==='diya') {
+    x.beginPath();x.moveTo(-70,20);x.bezierCurveTo(-70,72,70,72,70,20);x.lineTo(-70,20);x.closePath();x.fillStyle=s.fill;x.fill();x.strokeStyle='#8a4a1e';x.stroke();
+    poly([[-70,20],[70,20],[58,10],[-58,10]],'#f3c07a','#8a4a1e');
+    x.beginPath();x.moveTo(0,-12);x.bezierCurveTo(-16,-38,-14,-62,0,-80);x.bezierCurveTo(14,-62,16,-38,0,-12);x.fillStyle='#ff9d3a';x.fill();x.strokeStyle='#ffd166';x.stroke();
+    x.beginPath();x.moveTo(0,-24);x.bezierCurveTo(-8,-40,-6,-56,0,-68);x.bezierCurveTo(6,-56,8,-40,0,-24);x.fillStyle='#fff27a';x.fill();
+  } else if(id==='lotus') {
+    for(let i=0;i<6;i++){x.save();x.rotate(i*Math.PI/3);oval(0,-38,14,34,s.fill,'#c47fa8');x.restore();}
+    for(let i=0;i<5;i++){x.save();x.rotate(i*Math.PI/2.5+0.3);oval(0,-24,12,24,'#ffd0e2','#c47fa8');x.restore();}
+    oval(0,0,14,14,'#ffcf3f','#e6b422');
+  } else if(id==='om') {
+    x.strokeStyle=s.fill;x.lineWidth=12;x.lineCap='round';
+    x.beginPath();x.arc(-24,10,24,0.15*Math.PI,1.85*Math.PI);x.stroke();
+    x.beginPath();x.arc(20,-6,22,0.5*Math.PI,2.1*Math.PI);x.stroke();
+    x.beginPath();x.moveTo(-4,30);x.quadraticCurveTo(24,42,42,26);x.stroke();
+    oval(14,-52,10,10,s.fill,s.fill);
+    x.beginPath();x.arc(28,-64,16,Math.PI*1.15,Math.PI*1.85);x.stroke();
+  } else if(id==='mandala') {
+    x.strokeStyle=s.fill;x.lineWidth=4;
+    for(let r=1;r<=4;r++){x.beginPath();x.arc(0,0,r*20,0,Math.PI*2);x.stroke();}
+    for(let i=0;i<12;i++){x.save();x.rotate(i*Math.PI/6);x.beginPath();x.moveTo(0,-20);x.lineTo(0,-80);x.stroke();oval(0,-30,4,6,s.fill,s.fill);oval(0,-50,5,7,s.fill,s.fill);oval(0,-70,6,8,s.fill,s.fill);x.restore();}
+    oval(0,0,10,10,s.fill,'#8a4fb0');
+  } else if(id==='incense') {
+    poly([[-4,10],[4,10],[4,80],[-4,80]],s.fill,'#5a4634');
+    poly([[-40,80],[40,80],[24,96],[-24,96]],'#c9b89a','#8a6a3a');
+    x.strokeStyle='rgba(220,220,230,0.9)';x.lineWidth=5;x.beginPath();x.moveTo(0,10);x.bezierCurveTo(20,-20,-20,-40,10,-70);x.stroke();
+    x.strokeStyle='rgba(200,200,215,0.7)';x.beginPath();x.moveTo(0,10);x.bezierCurveTo(-18,-16,22,-42,-8,-72);x.stroke();
+    oval(0,4,4,4,'#ff5b3b','#ff9d3a');
+  } else if(id==='controller') {
+    x.beginPath();x.moveTo(-70,-30);x.bezierCurveTo(-90,-30,-90,40,-60,50);x.lineTo(-30,50);x.lineTo(30,50);x.lineTo(60,50);x.bezierCurveTo(90,40,90,-30,70,-30);x.lineTo(-70,-30);x.closePath();x.fillStyle=s.fill;x.fill();x.strokeStyle='#3a2a6a';x.stroke();
+    x.fillStyle='#20232b';x.fillRect(-52,-6,30,8);x.fillRect(-37,-21,8,30);
+    oval(30,-10,8,8,'#ff5b5b','#ff5b5b');oval(48,6,8,8,'#4dd0e1','#4dd0e1');oval(30,20,8,8,'#ffcf3f','#ffcf3f');oval(14,6,8,8,'#5bbf5b','#5bbf5b');
+    oval(-6,-16,10,6,'#3a2a6a','#3a2a6a');
+  } else if(id==='trophy') {
+    poly([[-40,-60],[40,-60],[32,-6],[-32,-6]],s.fill,'#b8891a');
+    x.beginPath();x.arc(-42,-40,20,Math.PI*0.5,Math.PI*1.5);x.strokeStyle='#b8891a';x.lineWidth=6;x.stroke();
+    x.beginPath();x.arc(42,-40,20,-Math.PI*0.5,Math.PI*0.5);x.stroke();
+    poly([[-14,-6],[14,-6],[18,26],[-18,26]],'#e6b422','#b8891a');
+    poly([[-34,26],[34,26],[38,46],[-38,46]],'#b8891a','#7a5a10');
+    oval(0,-30,10,10,'#fff8c2','#b8891a');
+  } else if(id==='level-up') {
+    poly([[0,-80],[50,-16],[24,-16],[24,50],[-24,50],[-24,-16],[-50,-16]],s.fill,'#1e7a3c');
+    x.fillStyle='#ffffff';x.font='bold 22px system-ui';x.textAlign='center';x.textBaseline='middle';x.fillText('LVL UP',0,26);
+    for(let i=0;i<3;i++){const px=-58+i*58,py=-56+((i%2)*14);const pts=[[px,py-8],[px+3,py-3],[px+8,py],[px+3,py+3],[px,py+8],[px-3,py+3],[px-8,py],[px-3,py-3]];poly(pts,'#ffcf3f','#e6b422');}
+  } else if(id==='pixel-heart') {
+    x.fillStyle=s.fill;x.strokeStyle='#8a1e38';x.lineWidth=2;
+    const px=16,map=[[0,1,1,0,1,1,0],[1,1,1,1,1,1,1],[1,1,1,1,1,1,1],[0,1,1,1,1,1,0],[0,0,1,1,1,0,0],[0,0,0,1,0,0,0]];
+    for(let r=0;r<map.length;r++)for(let c=0;c<map[r]!.length;c++)if(map[r]![c]){const rx=(c-3)*px,ry=(r-3)*px;x.fillRect(rx,ry,px,px);x.strokeRect(rx,ry,px,px);}
+  } else if(id==='neon-bolt') {
+    x.shadowColor=s.fill;x.shadowBlur=14;
+    poly([[10,-90],[-62,15],[-8,15],[-26,90],[65,-27],[15,-27],[36,-90]],s.fill,'#e0faff');
+    x.shadowBlur=0;
+  } else if(id==='thumbs-up') {
+    x.beginPath();x.roundRect(-70,10,32,64,6);x.fillStyle=s.fill;x.fill();x.strokeStyle='#1e3a8a';x.stroke();
+    x.beginPath();x.moveTo(-38,74);x.lineTo(-38,20);x.bezierCurveTo(-38,10,-24,4,-8,4);x.lineTo(6,-30);x.bezierCurveTo(20,-58,46,-40,42,-16);x.lineTo(38,10);x.lineTo(70,10);x.bezierCurveTo(84,10,84,74,66,74);x.closePath();x.fillStyle=s.fill;x.fill();x.strokeStyle='#1e3a8a';x.stroke();
+  } else if(id==='bell') {
+    x.beginPath();x.moveTo(-56,40);x.bezierCurveTo(-56,-30,-30,-60,0,-60);x.bezierCurveTo(30,-60,56,-30,56,40);x.lineTo(-56,40);x.closePath();x.fillStyle=s.fill;x.fill();x.strokeStyle='#8a5a10';x.stroke();
+    line([[-70,44],[70,44]],'#8a5a10',10);
+    x.beginPath();x.arc(0,58,14,0,Math.PI);x.fillStyle='#8a5a10';x.fill();
+    oval(0,-64,7,7,'#8a5a10','#8a5a10');
+  } else if(id==='play-btn') {
+    x.beginPath();x.roundRect(-84,-58,168,116,20);x.fillStyle=s.fill;x.fill();x.strokeStyle='#8a1a1a';x.stroke();
+    poly([[10,-30],[10,30],[-24,0]],'#ffffff','#ffffff');
+  } else if(id==='subscribe') {
+    x.beginPath();x.roundRect(-84,-32,168,64,12);x.fillStyle=s.fill;x.fill();x.strokeStyle='#7a1a1a';x.stroke();
+    poly([[-40,-12],[-40,12],[-24,0]],'#ffffff','#ffffff');
+    x.fillStyle='#ffffff';x.font='bold 22px system-ui';x.textAlign='center';x.textBaseline='middle';x.fillText('SUBSCRIBE',18,2);
+  } else if(id==='share') {
+    oval(58,-42,18,18,s.fill,'#1a5a2c');oval(58,42,18,18,s.fill,'#1a5a2c');oval(-52,0,18,18,s.fill,'#1a5a2c');
+    x.strokeStyle=s.fill;x.lineWidth=6;
+    line([[-40,-6],[46,-36]],'#1a5a2c',6);line([[-40,6],[46,36]],'#1a5a2c',6);
+    line([[-40,-6],[46,-36]],s.fill,4);line([[-40,6],[46,36]],s.fill,4);
+  } else if(id==='boom') {
+    const pts:number[][]=[];for(let i=0;i<16;i++){const a=i*Math.PI/8-Math.PI/2,r=i%2?44:88;pts.push([Math.cos(a)*r,Math.sin(a)*r]);}poly(pts,s.fill,'#8a5a10');
+    x.fillStyle='#8a1e38';x.font='bold 34px system-ui';x.textAlign='center';x.textBaseline='middle';x.fillText('BOOM',0,2);
+  } else if(id==='pow') {
+    const pts:number[][]=[];for(let i=0;i<20;i++){const a=i*Math.PI/10-Math.PI/2,r=i%2?36:86;pts.push([Math.cos(a)*r,Math.sin(a)*r]);}poly(pts,s.fill,'#7a1a3c');
+    x.fillStyle='#ffffff';x.font='bold 30px system-ui';x.textAlign='center';x.textBaseline='middle';x.fillText('POW',0,2);
+  } else if(id==='comic-panel') {
+    x.beginPath();x.rect(-84,-64,168,128);x.fillStyle=s.fill;x.fill();x.strokeStyle='#111827';x.lineWidth=8;x.stroke();
+    x.fillStyle='#111827';x.font='bold 24px system-ui';x.textAlign='center';x.textBaseline='middle';x.fillText('...',0,10);
+    x.beginPath();x.moveTo(-40,-30);x.bezierCurveTo(-30,-50,-10,-50,0,-30);x.bezierCurveTo(-10,-42,-30,-42,-40,-30);x.fill();
+  } else if(id==='halftone') {
+    x.fillStyle=s.fill;for(let r=0;r<6;r++)for(let c=0;c<8;c++){const rad=2+(5-r)*1.4+((7-c))*0.4;x.beginPath();x.arc(-70+c*20,-50+r*20,rad,0,Math.PI*2);x.fill();}
+    x.strokeStyle='#ef476f';x.lineWidth=4;x.strokeRect(-84,-64,168,128);
+  } else if(id==='new-badge') {
+    const pts:number[][]=[];for(let i=0;i<24;i++){const a=i*Math.PI/12,r=i%2?54:80;pts.push([Math.cos(a)*r,Math.sin(a)*r]);}poly(pts,s.fill,'#8a1a1a');
+    x.fillStyle='#ffffff';x.font='bold 34px system-ui';x.textAlign='center';x.textBaseline='middle';x.fillText('NEW',0,4);
+  } else if(id==='sale-tag') {
+    x.save();x.rotate(-0.15);
+    poly([[-70,-40],[50,-40],[70,0],[50,40],[-70,40]],s.fill,'#8a6a10');
+    oval(52,0,7,7,'#ffffff','#8a6a10');
+    x.fillStyle='#8a1e38';x.font='bold 28px system-ui';x.textAlign='center';x.textBaseline='middle';x.fillText('SALE',-12,2);
+    x.restore();
+  } else if(id==='breaking-news') {
+    poly([[-88,-30],[88,-30],[88,30],[-88,30]],s.fill,'#7a1a10');
+    x.fillStyle='#ffffff';x.font='bold 22px system-ui';x.textAlign='center';x.textBaseline='middle';x.fillText('BREAKING NEWS',0,2);
+    poly([[-88,30],[88,30],[88,50],[-88,50]],'#ffd32a','#8a6a10');
+  } else if(id==='lower-third') {
+    poly([[-88,-14],[-70,-14],[-70,14],[-88,14]],s.fill,'#0f172a');
+    poly([[-66,-14],[88,-14],[88,14],[-66,14]],'#334155','#0f172a');
+    x.fillStyle='#ffffff';x.font='bold 14px system-ui';x.textAlign='left';x.textBaseline='middle';x.fillText('NAME • TITLE',-56,2);
+  } else if(id==='loading-bar') {
+    x.beginPath();x.roundRect(-84,-14,168,28,14);x.fillStyle='#e5e7eb';x.fill();x.strokeStyle='#374151';x.lineWidth=3;x.stroke();
+    x.save();x.beginPath();x.roundRect(-84,-14,110,28,14);x.fillStyle=s.fill;x.fill();x.restore();
+    x.fillStyle='#ffffff';x.font='bold 12px system-ui';x.textAlign='center';x.textBaseline='middle';x.fillText('LOADING',-30,2);
   }
   x.restore();
 }

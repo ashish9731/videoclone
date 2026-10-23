@@ -80,7 +80,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "Cutroom — Video editor in your browser" },
-      { name: "description", content: "Edit video on a real multi-track timeline, auto-caption it with AI, and export MP4." },
+      { name: "description", content: "Edit video on a real multi-track timeline, caption it and export MP4 in your browser." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],

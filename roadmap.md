@@ -18,7 +18,9 @@
 - [x] Stickers & shapes library
 - [x] Speed curves (presets + custom editor)
 - [x] Audio: fade presets, ducking
-- [ ] AI: background removal, portrait blur — unavailable pending a working segmentation result; not offered in galleries
+- [x] Honest AI: auto-captions, caption translation, AI portrait effects and the talking avatar are labelled Pro in the UI and answer any attempt with a "coming soon in the Pro version" notice; the landing page advertises no model-backed feature as working, and landing.test.ts fails copy that does
+- [ ] Pro: flip `PRO_AVAILABLE` in src/lib/pro-gate.ts once the paid plan and its service budget exist (the transcription and translation pipelines are already wired)
+- [ ] AI: background removal, portrait blur — segmentation model ships in the build but stays gated until a working result is certified
 - [ ] AI auto-reframe, style transfer, body effects — require a supported processing service; not offered
 - [x] Targeted end-to-end preview and export verification; exhaustive normal-speed parity, audio quality, and fresh auto-transcription verification remain uncertified
 - [x] Gallery tiles: every tile is a real render of its preset (no emoji, no reused tiles) across Text/Stickers/Effects/Transitions/Captions/Filters

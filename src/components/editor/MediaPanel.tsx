@@ -6,7 +6,8 @@ import { Progress } from "@/components/ui/progress";
 import { type EditorStore } from "@/lib/editor/store";
 import { deleteMedia, uploadMedia } from "@/lib/editor/media";
 import { type MediaAsset, clipFromAsset, formatTime } from "@/lib/editor/types";
-import { addClipToTimeline, writeAssetDrag, endAssetDrag } from "./Timeline";
+import { addClipToTimeline } from "@/lib/editor/placement";
+import { writeAssetDrag, endAssetDrag } from "./library-drag";
 
 interface Props {
   store: EditorStore;
