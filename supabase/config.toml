@@ -7,8 +7,11 @@ project_id = "xtlxcgzicaugttdigrxh"
 # This block documents/mirrors that configuration and takes effect only when
 # running a local stack via `supabase start`.
 #
-# Dashboard equivalents already set:
-#   Site URL:            http://localhost:3000   (Authentication > URL Configuration)
+# Dashboard equivalents (source of truth is the dashboard):
+#   Site URL:            https://cutroom-roan-nine.vercel.app   (Authentication > URL Configuration)
+#   Redirect URLs:       https://cutroom-roan-nine.vercel.app/auth
+#                        https://cutroom-roan-nine.vercel.app/projects
+#                        http://localhost:3000/**   (local dev only)
 #   Authorization Path:  /oauth/consent          (Authentication > OAuth Server)
 # Consent UI implementation: src/routes/oauth.consent.tsx
 [auth.oauth_server]
