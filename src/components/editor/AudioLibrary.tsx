@@ -6,6 +6,7 @@ import { clipFromAsset, type MediaAsset } from '@/lib/editor/types';
 import type { EditorStore } from '@/lib/editor/store';
 import { useEditor } from '@/lib/editor/store';
 import { addClipToTimeline } from '@/lib/editor/placement';
+import { AudioRecorder } from './AudioRecorder';
 
 function Waveform({ sound, getBuffer }: { sound: Sound; getBuffer: (s: Sound) => Promise<AudioBuffer> }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -25,15 +26,34 @@ function Waveform({ sound, getBuffer }: { sound: Sound; getBuffer: (s: Sound) =>
   }, [sound, getBuffer]);
   return <canvas ref={ref} width={240} height={32} className="h-8 w-full" aria-label={`${sound.name} waveform`} />;
 }
+let sharedCtx: AudioContext | null = null;
+/** One page-wide AudioContext, reused for decoding real files and for playback so we never open a second. */
+function ensureCtx(): AudioContext { return (sharedCtx ??= new AudioContext()); }
+/** A `url` sound plays its bundled recording; everything else is synthesized on demand. */
+async function loadSound(sound: Sound): Promise<AudioBuffer> {
+  if (!sound.url) return renderSound(sound);
+  const res = await fetch(sound.url);
+  if (!res.ok) throw new Error(`Missing audio file for ${sound.name}`);
+  return ensureCtx().decodeAudioData(await res.arrayBuffer());
+}
+/** Upload the bundled recording as-is (keeping its format/quality) instead of re-encoding to WAV. */
+async function fileFromUrl(sound: Sound): Promise<File> {
+  const res = await fetch(sound.url!);
+  if (!res.ok) throw new Error(`Missing audio file for ${sound.name}`);
+  const blob = await res.blob();
+  const ext = sound.url!.split('.').pop() ?? 'wav';
+  const type = ext === 'mp3' ? 'audio/mpeg' : ext === 'ogg' ? 'audio/ogg' : `audio/${ext}`;
+  return new File([blob], `${sound.name}.${ext}`, { type });
+}
 const buffers = new Map<string, Promise<AudioBuffer>>();
 function getBuffer(sound: Sound) {
   let promise = buffers.get(sound.id);
-  if (!promise) { promise = renderSound(sound); buffers.set(sound.id, promise); void promise.catch(() => buffers.delete(sound.id)); }
+  if (!promise) { promise = loadSound(sound); buffers.set(sound.id, promise); void promise.catch(() => buffers.delete(sound.id)); }
   return promise;
 }
 export function AudioLibrary({ store, userId, projectId, onAdded }: { store: EditorStore; userId: string; projectId: string; onAdded: (a: MediaAsset) => void }) {
   const [category, setCategory] = useState('All'), [search, setSearch] = useState(''), [playing, setPlaying] = useState<string | null>(null), [busy, setBusy] = useState<string | null>(null);
-  const context = useRef<AudioContext | null>(null), source = useRef<AudioBufferSourceNode | null>(null), request = useRef(0), adding = useRef(false);
+  const source = useRef<AudioBufferSourceNode | null>(null), request = useRef(0), adding = useRef(false);
   const stop = () => { request.current++; source.current?.stop(); source.current = null; setPlaying(null); };
   // a sound effect preview is not part of the edit: any play/pause of the timeline mutes it so the
   // library can never keep sounding while the preview itself is stopped
@@ -47,12 +67,12 @@ export function AudioLibrary({ store, userId, projectId, onAdded }: { store: Edi
     source.current = null;
     setPlaying(null);
   }, [transport]);
-  useEffect(() => () => { request.current++; source.current?.stop(); void context.current?.close(); }, []);
+  useEffect(() => () => { request.current++; source.current?.stop(); }, []);
   const preview = async (sound: Sound) => {
     const wasPlaying = playing === sound.id; stop(); if (wasPlaying) return;
     const id = request.current;
     try {
-      const ctx = context.current ??= new AudioContext(); await ctx.resume();
+      const ctx = ensureCtx(); await ctx.resume();
       const buffer = await getBuffer(sound); if (id !== request.current) return;
       const node = ctx.createBufferSource(); node.buffer = buffer; node.connect(ctx.destination); source.current = node;
       node.onended = () => { if (source.current === node) { source.current = null; setPlaying(null); } }; node.start(); setPlaying(sound.id);
@@ -62,17 +82,19 @@ export function AudioLibrary({ store, userId, projectId, onAdded }: { store: Edi
     if (adding.current) return;
     adding.current = true; setBusy(sound.id); const time = store.get().time;
     try {
-      const buffer = await getBuffer(sound);
-      const asset = await uploadMedia(new File([encodeWav(buffer)], `${sound.name}.wav`, { type: 'audio/wav' }), userId, projectId, () => {});
+      const asset = sound.url
+        ? await uploadMedia(await fileFromUrl(sound), userId, projectId, () => {})
+        : await uploadMedia(new File([encodeWav(await getBuffer(sound))], `${sound.name}.wav`, { type: 'audio/wav' }), userId, projectId, () => {});
       onAdded(asset); addClipToTimeline(store, clipFromAsset(asset, time)); toast.success(`Added ${sound.name}`);
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Could not add sound'); }
     finally { adding.current = false; setBusy(null); }
   };
   const shown = SOUNDS.filter(s => (category === 'All' || s.category === category) && `${s.name} ${s.category}`.toLowerCase().includes(search.toLowerCase()));
   return <div className="flex h-full min-h-0 flex-col gap-3 p-3">
-    <div><h3 className="text-sm font-medium">Original audio · {SOUNDS.length} sounds</h3><p className="text-[10px] text-muted-foreground">Royalty-free synthesized music & sound effects</p></div>
+    <div><h3 className="text-sm font-medium">Original audio · {SOUNDS.length} sounds</h3><p className="text-[10px] text-muted-foreground">Royalty-free music &amp; sound effects</p></div>
+    <AudioRecorder store={store} userId={userId} projectId={projectId} onAdded={onAdded} />
     <input className="rounded border bg-background p-2 text-xs" aria-label="Search audio" placeholder="Search sounds…" value={search} onChange={e => setSearch(e.target.value)} />
-    <div className="flex flex-wrap gap-1">{['All', 'Music beds', 'Drum loops', 'SFX'].map(c => <button key={c} aria-pressed={category === c} className={`rounded px-2 py-1 text-xs ${category === c ? 'bg-primary text-primary-foreground' : 'bg-secondary'}`} onClick={() => setCategory(c)}>{c}</button>)}</div>
+    <div className="flex flex-wrap gap-1">{['All', ...Array.from(new Set(SOUNDS.map(s => s.category)))].map(c => <button key={c} aria-pressed={category === c} className={`rounded px-2 py-1 text-xs ${category === c ? 'bg-primary text-primary-foreground' : 'bg-secondary'}`} onClick={() => setCategory(c)}>{c}</button>)}</div>
     <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">{shown.map(sound => <div key={sound.id} className="rounded border p-2">
       <div className="flex justify-between gap-2 text-xs"><span>{sound.name}</span><span className="text-muted-foreground">{sound.duration.toFixed(2)}s</span></div>
       <Waveform sound={sound} getBuffer={getBuffer} />

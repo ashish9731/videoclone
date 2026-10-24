@@ -1,17 +1,39 @@
 import { applyKey } from "./key";
-import { visualFadeAt } from './clip-controls';
+import { visualFadeAt } from "./clip-controls";
 import { applyMask } from "./mask";
 import { animState } from "./anim";
-import { applyGlobalFx, blurInPlace, clear, ctx2d, gradeFrame, pixelate, poolCanvas, processLayer } from "./fx";
+import {
+  applyGlobalFx,
+  blurInPlace,
+  clear,
+  ctx2d,
+  gradeFrame,
+  pixelate,
+  poolCanvas,
+  processLayer,
+} from "./fx";
 import { drawShape } from "./shapes";
-import { drawTransition, nextAdjacent, prevAdjacent } from "./transitions";
-import { type CaptionTrack, type Clip, type Timeline, type Track, clipDuration, interpolate, isActive, isVisualClip } from "./types";
+import { drawTransition, nextAdjacent, prevAdjacent, transitionBlockSpan } from "./transitions";
+import { drawWatermark, type WatermarkImageGetter } from "./watermark";
+import {
+  type CaptionTrack,
+  type Clip,
+  type Timeline,
+  type Track,
+  type Watermark,
+  clipDuration,
+  interpolate,
+  isActive,
+  isVisualClip,
+} from "./types";
 
 export type SourceGetter = (clip: Clip) => CanvasImageSource | null;
 
 function sourceSize(src: CanvasImageSource): [number, number] {
-  if (typeof HTMLVideoElement !== "undefined" && src instanceof HTMLVideoElement) return [src.videoWidth, src.videoHeight];
-  if (typeof HTMLImageElement !== "undefined" && src instanceof HTMLImageElement) return [src.naturalWidth, src.naturalHeight];
+  if (typeof HTMLVideoElement !== "undefined" && src instanceof HTMLVideoElement)
+    return [src.videoWidth, src.videoHeight];
+  if (typeof HTMLImageElement !== "undefined" && src instanceof HTMLImageElement)
+    return [src.naturalWidth, src.naturalHeight];
   const s = src as { width: number; height: number };
   return [s.width, s.height];
 }
@@ -41,7 +63,13 @@ const lineCache = new WeakMap<object, LineCache>();
  * frame of a clip; the style object is replaced on any edit, so caching it is self-invalidating.
  * `key` has to describe everything that changes measurement (font, letter spacing).
  */
-function cachedLines(style: object, ctx: CanvasRenderingContext2D, text: string, key: string, maxW: number): string[] {
+function cachedLines(
+  style: object,
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  key: string,
+  maxW: number,
+): string[] {
   const hit = lineCache.get(style);
   if (hit && hit.key === key && hit.maxW === maxW && hit.text === text) return hit.lines;
   const lines = wrapLines(ctx, text, maxW);
@@ -60,7 +88,14 @@ interface TextOpts {
   reveal?: number | undefined;
 }
 
-function drawTextBlock(ctx: CanvasRenderingContext2D, lines: string[], cx: number, cy: number, size: number, opts: TextOpts) {
+function drawTextBlock(
+  ctx: CanvasRenderingContext2D,
+  lines: string[],
+  cx: number,
+  cy: number,
+  size: number,
+  opts: TextOpts,
+) {
   const lh = size * 1.25;
   const total = lh * lines.length;
   ctx.textAlign = opts.align;
@@ -121,6 +156,10 @@ export interface RenderOptions {
   /** project-space size the transforms/text sizes are authored in */
   baseHeight: number;
   captions?: CaptionTrack[];
+  /** read from EditorState, never from `timeline`, so timeline edits can never drop it */
+  watermark?: Watermark | undefined;
+  /** resolves the watermark logo asset to an image; omitted means a logo watermark cannot paint */
+  getWatermarkImage?: WatermarkImageGetter | undefined;
 }
 
 export function textFont(s: NonNullable<Clip["text"]>, size: number) {
@@ -153,7 +192,10 @@ export function renderClipLayer(
     rotation: interpolate(c.keyframes.rotation, kl, c.transform.rotation),
     opacity: interpolate(c.keyframes.opacity, kl, c.transform.opacity),
   };
-  const opacity = Math.max(0, Math.min(1, pose.opacity * a.opacity * visualFadeAt(c, t)));
+  const opacity = Math.max(
+    0,
+    Math.min(1, pose.opacity * a.opacity * visualFadeAt(c, Math.max(c.start, t))),
+  );
   if (opacity <= 0.001) return null;
 
   x.save();
@@ -204,9 +246,11 @@ export function renderClipLayer(
       const [sw, sh] = sourceSize(src);
       if (sw > 0 && sh > 0) {
         const crop = c.crop ?? { x: 0, y: 0, w: 1, h: 1 };
-        const cw = sw * crop.w, ch = sh * crop.h;
+        const cw = sw * crop.w,
+          ch = sh * crop.h;
         const fit = Math.min(W / cw, H / ch);
-        const dw = cw * fit, dh = ch * fit;
+        const dw = cw * fit,
+          dh = ch * fit;
         wipeBox(dw, dh);
         x.drawImage(src, sw * crop.x, sh * crop.y, cw, ch, -dw / 2, -dh / 2, dw, dh);
         drew = true;
@@ -259,7 +303,13 @@ export function gradeBlocksInLane(tr: Track, t: number): Clip[] {
   return tr.clips.filter((c) => c.kind === "filter" && c.filter !== undefined && isActive(c, t));
 }
 
-export function renderFrame(ctx: CanvasRenderingContext2D, timeline: Timeline, t: number, getSource: SourceGetter, o: RenderOptions) {
+export function renderFrame(
+  ctx: CanvasRenderingContext2D,
+  timeline: Timeline,
+  t: number,
+  getSource: SourceGetter,
+  o: RenderOptions,
+) {
   const { width: W, height: H } = o;
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -275,20 +325,39 @@ export function renderFrame(ctx: CanvasRenderingContext2D, timeline: Timeline, t
   const visual = timeline.tracks.filter((tr) => !tr.hidden);
   for (let i = visual.length - 1; i >= 0; i--) {
     const tr = visual[i]!;
+    // Clips whose incoming blend is painting them right now. The blend draws the outgoing side
+    // itself, so that clip must not also paint its plain frame underneath - transformed effects
+    // (push, zoom, slide) would otherwise double-expose the still frame and flicker.
+    const blendedOutIds = new Set<string>();
     for (const c of tr.clips) {
-      if (!isVisualClip(c) || !isActive(c, t)) continue;
+      const tin = c.transitionIn;
+      const block = tin && tin.duration > 0 ? transitionBlockSpan(c) : null;
+      if (block && t >= block.start && t < block.start + block.duration) {
+        const prev = prevAdjacent(tr, c);
+        if (prev) blendedOutIds.add(prev.id);
+      }
+    }
+    for (const c of tr.clips) {
+      if (!isVisualClip(c)) continue;
+      if (blendedOutIds.has(c.id)) continue;
+      const tin = c.transitionIn;
+      const block = tin && tin.duration > 0 ? transitionBlockSpan(c) : null;
+      const inBlend = block !== null && t >= block.start && t < block.start + block.duration;
+      if (!isActive(c, t) && !inBlend) continue;
       ctx.globalCompositeOperation = c.blend ?? "source-over";
       const d = clipDuration(c);
       const local = t - c.start;
-      const tin = c.transitionIn;
       const tout = c.transitionOut;
-      if (tin && tin.duration > 0 && local < tin.duration) {
+      if (inBlend && block && tin) {
         const prev = prevAdjacent(tr, c);
-        const from = prev ? renderClipLayer("layer-from", prev, t, getSource, W, H, o.baseHeight) : null;
+        const from = prev
+          ? renderClipLayer("layer-from", prev, t, getSource, W, H, o.baseHeight)
+          : null;
         const to = renderClipLayer("layer-to", c, t, getSource, W, H, o.baseHeight);
-        drawTransition(ctx, tin.type, local / tin.duration, from, to);
+        drawTransition(ctx, tin.type, (t - block.start) / block.duration, from, to);
         continue;
       }
+      if (!isActive(c, t)) continue;
       const L = renderClipLayer("layer-to", c, t, getSource, W, H, o.baseHeight);
       const next = nextAdjacent(tr, c);
       const handoff = next?.transitionIn && next.transitionIn.duration > 0;
@@ -314,7 +383,8 @@ export function renderFrame(ctx: CanvasRenderingContext2D, timeline: Timeline, t
     const fxc = ctx2d(frame);
     clear(frame);
     fxc.drawImage(ctx.canvas, 0, 0, W, H);
-    for (const ec of effectClips) applyGlobalFx(frame, ec.fx ?? [], Math.max(0, t - ec.start), H / 1080, clipDuration(ec));
+    for (const ec of effectClips)
+      applyGlobalFx(frame, ec.fx ?? [], Math.max(0, t - ec.start), H / 1080, clipDuration(ec));
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1;
@@ -349,5 +419,8 @@ export function renderFrame(ctx: CanvasRenderingContext2D, timeline: Timeline, t
       ctx.restore();
     }
   }
+
+  // watermark paints last so it always sits above the picture and captions and is baked into export
+  if (o.watermark) drawWatermark(ctx, o.watermark, W, H, o.getWatermarkImage);
   ctx.restore();
 }

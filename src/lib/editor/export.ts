@@ -16,13 +16,14 @@ import {
 import { mixTimelineAudio } from "./audio-mix";
 import { remoteUrl } from "./media";
 import { renderFrame } from "./render";
-import { outgoingTail } from "./transitions";
+import { outgoingTail, transitionBlockSpan } from "./transitions";
 import { AI_EFFECTS, ensureSegmenter } from "./ai";
 import {
   type CaptionTrack,
   type Clip,
   type MediaAsset,
   type Timeline,
+  type Watermark,
   clipEnd,
   isVisualClip,
   sourceTime,
@@ -38,6 +39,7 @@ export interface ExportOptions {
   baseHeight: number;
   sourceAspect?: number | undefined;
   autoReframe?: boolean | undefined;
+  watermark: Watermark;
   fps: number;
   onProgress: (p: number, label: string) => void;
   signal: AbortSignal;
@@ -71,34 +73,61 @@ export async function exportVideo(o: ExportOptions): Promise<Blob> {
       break;
     }
   }
-  if (!vcodec) throw new Error("Your browser can't encode video at this size. Try Chrome or Edge, or a smaller size.");
-  const acodec = (await canEncodeAudio("aac")) ? "aac" : (await canEncodeAudio("opus")) ? "opus" : null;
+  if (!vcodec)
+    throw new Error(
+      "Your browser can't encode video at this size. Try Chrome or Edge, or a smaller size.",
+    );
+  const acodec = (await canEncodeAudio("aac"))
+    ? "aac"
+    : (await canEncodeAudio("opus"))
+      ? "opus"
+      : null;
   const audioOk = acodec !== null;
 
-  if (timeline.tracks.some((tr) => !tr.hidden && tr.clips.some((c) => c.fx?.some((f) => AI_EFFECTS.has(f.id))))) {
+  if (
+    timeline.tracks.some(
+      (tr) => !tr.hidden && tr.clips.some((c) => c.fx?.some((f) => AI_EFFECTS.has(f.id))),
+    )
+  ) {
     o.onProgress(0, "Loading AI model");
     await ensureSegmenter().catch(() => {
-      throw new Error("The AI background model couldn't load. Check your connection and try again.");
+      throw new Error(
+        "The AI background model couldn't load. Check your connection and try again.",
+      );
     });
   }
   o.onProgress(0, "Preparing audio");
   const mix = audioOk
-    ? await mixTimelineAudio(timeline, o.assets, 48000, 2, (p, l) => o.onProgress(p * 0.1, l), signal)
+    ? await mixTimelineAudio(
+        timeline,
+        o.assets,
+        48000,
+        2,
+        (p, l) => o.onProgress(p * 0.1, l),
+        signal,
+      )
     : null;
 
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d", { alpha: false });
-  if (!ctx) throw new Error('Could not create the export canvas');
+  if (!ctx) throw new Error("Could not create the export canvas");
 
   const frame = document.createElement("canvas");
-  frame.height = height; frame.width = Math.round(height * (o.sourceAspect ?? width/height));
+  frame.height = height;
+  frame.width = Math.round(height * (o.sourceAspect ?? width / height));
   const frameCtx = frame.getContext("2d")!;
   const reframer = new Reframer();
 
-  const output = new Output({ format: new Mp4OutputFormat({ fastStart: "in-memory" }), target: new BufferTarget() });
-  const videoSource = new CanvasSource(canvas, { codec: vcodec, bitrate: Math.max(2_000_000, Math.round(width * height * 6)) });
+  const output = new Output({
+    format: new Mp4OutputFormat({ fastStart: "in-memory" }),
+    target: new BufferTarget(),
+  });
+  const videoSource = new CanvasSource(canvas, {
+    codec: vcodec,
+    bitrate: Math.max(2_000_000, Math.round(width * height * 6)),
+  });
   output.addVideoTrack(videoSource, { frameRate: fps });
   let audioSource: AudioBufferSource | null = null;
   if (mix && acodec) {
@@ -110,21 +139,38 @@ export async function exportVideo(o: ExportOptions): Promise<Blob> {
   // each visual clip stays decodable through its outgoing transition tail; effect blocks
   // repaint the composited frame in renderFrame and never carry source frames of their own.
   // The lane type never decides this - export must read exactly what renderFrame draws.
-  const visualClips: { c: Clip; end: number }[] = timeline.tracks
+  const visualClips: { c: Clip; start: number; end: number }[] = timeline.tracks
     .filter((tr) => !tr.hidden)
-    .flatMap((tr) => tr.clips.filter(isVisualClip).map((c) => ({ c, end: clipEnd(c) + outgoingTail(tr, c) })));
+    .flatMap((tr) =>
+      tr.clips.filter(isVisualClip).map((c) => {
+        const blk = c.transitionIn ? transitionBlockSpan(c) : null;
+        const start = blk ? Math.min(c.start, blk.start) : c.start;
+        return { c, start, end: clipEnd(c) + outgoingTail(tr, c) };
+      }),
+    );
   const endOf = new Map(visualClips.map((v) => [v.c.id, v.end]));
   const frames = new Map<string, ClipFrames>();
   const images = new Map<string, HTMLImageElement>();
   const totalFrames = Math.ceil(duration * fps);
 
+  // the watermark logo is decoded once up front so every frame paints the identical mark
+  const wm = o.watermark;
+  if (wm.enabled && wm.kind === "logo" && wm.logoAssetId) {
+    const a = o.assets.get(wm.logoAssetId);
+    if (a && !images.has(a.id)) images.set(a.id, await loadImage(await remoteUrl(a.storage_path)));
+  }
+
   const openClip = async (c: Clip, firstFrame: number) => {
-    const a = o.assets.get(c.assetId ?? '');
+    const a = o.assets.get(c.assetId ?? "");
     if (!a) return;
-    const input = new Input({ source: new UrlSource(await remoteUrl(a.storage_path)), formats: ALL_FORMATS });
+    const input = new Input({
+      source: new UrlSource(await remoteUrl(a.storage_path)),
+      formats: ALL_FORMATS,
+    });
     const track = await input.getPrimaryVideoTrack();
     if (!track) return;
-    if (!(await track.canDecode())) throw new Error(`"${c.name}" uses a video format your browser can't decode`);
+    if (!(await track.canDecode()))
+      throw new Error(`"${c.name}" uses a video format your browser can't decode`);
     // Preserve native source geometry; the shared renderer performs crop and fit.
     const sink = new CanvasSink(track);
     if (c.freezeAt !== undefined) {
@@ -135,7 +181,8 @@ export async function exportVideo(o: ExportOptions): Promise<Blob> {
     const end = Math.min(totalFrames, Math.ceil((endOf.get(c.id) ?? clipEnd(c)) * fps));
     const maxT = Math.max(0, (await track.computeDuration()) - 0.001);
     const stamps: number[] = [];
-    for (let i = firstFrame; i < end; i++) stamps.push(Math.min(maxT, Math.max(0, sourceTime(c, i / fps))));
+    for (let i = firstFrame; i < end; i++)
+      stamps.push(Math.min(maxT, Math.max(0, sourceTime(c, Math.max(c.start, i / fps)))));
     frames.set(c.id, { input, gen: sink.canvasesAtTimestamps(stamps), current: null });
   };
 
@@ -143,8 +190,8 @@ export async function exportVideo(o: ExportOptions): Promise<Blob> {
     for (let i = 0; i < totalFrames; i++) {
       if (signal.aborted) throw new DOMException("Export cancelled", "AbortError");
       const t = i / fps;
-      for (const { c, end } of visualClips) {
-        const active = t >= c.start && t < end;
+      for (const { c, start, end } of visualClips) {
+        const active = t >= start && t < end;
         if (c.kind === "video") {
           if (active) {
             if (!frames.has(c.id)) await openClip(c, i);
@@ -169,13 +216,29 @@ export async function exportVideo(o: ExportOptions): Promise<Blob> {
         frameCtx,
         timeline,
         t,
-        (c) => (c.kind === "video" ? (frames.get(c.id)?.current ?? null) : images.get(c.assetId ?? "") ?? null),
-        { width: frame.width, height: frame.height, baseHeight: o.baseHeight, captions: o.captions },
+        (c) =>
+          c.kind === "video"
+            ? (frames.get(c.id)?.current ?? null)
+            : (images.get(c.assetId ?? "") ?? null),
+        {
+          width: frame.width,
+          height: frame.height,
+          baseHeight: o.baseHeight,
+          captions: o.captions,
+          watermark: o.watermark,
+          getWatermarkImage: (id) => images.get(id) ?? null,
+        },
       );
-      const rect = cropRect(frame.width, frame.height, width/height, o.autoReframe ? reframer.sample(frame) : undefined);
+      const rect = cropRect(
+        frame.width,
+        frame.height,
+        width / height,
+        o.autoReframe ? reframer.sample(frame) : undefined,
+      );
       ctx.drawImage(frame, rect.x, rect.y, rect.w, rect.h, 0, 0, width, height);
       await videoSource.add(t, 1 / fps);
-      if (i % 5 === 0) o.onProgress(0.1 + 0.85 * (i / totalFrames), `Rendering frame ${i + 1} of ${totalFrames}`);
+      if (i % 5 === 0)
+        o.onProgress(0.1 + 0.85 * (i / totalFrames), `Rendering frame ${i + 1} of ${totalFrames}`);
     }
     if (audioSource && mix) {
       o.onProgress(0.96, "Encoding audio");

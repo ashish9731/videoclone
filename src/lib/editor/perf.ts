@@ -137,23 +137,15 @@ const SYNC_DEADZONE = 0.04;
 /**
  * Time a freshly started (or re-seeked) stream is left exactly at its own rate. Sources do not spin
  * up instantly: decode, buffer fill and the preview governor settling all cost time in the first
- * second, and the element looks like it is "lagging" while it is only starting up. Correcting that
- * made the voice run fast and high-pitched on every play press, which is what this window forbids.
+ * second, and the element looks like it is "lagging" while it is only starting up.
  */
 const SYNC_START_GRACE_MS = 1000;
 /** How long a gap has to survive before it counts as drift rather than startup latency. */
 const SYNC_SETTLE_MS = 600;
-/** Drift this large (or bigger) gets the full correction; smaller gaps scale linearly below it. */
-const SYNC_FULL_NUDGE_DRIFT = 0.3;
 /**
- * Hard limit on the correction. Preview elements do not preserve pitch, so anything generous here is
- * heard as the audio speeding up: this is the largest shift that stays below notice.
- */
-const SYNC_MAX_NUDGE = 0.06;
-/**
- * A gap this big is not something to ease away over ten seconds: it is a different position, and one
- * decisive re-alignment is worth the click. It is only ever considered after the grace and settle
- * windows, so a start-up lag can never turn into a burst of stream restarts.
+ * A gap this big (or bigger) after the settle window is a position error and gets a seek. Smaller
+ * persistent gaps past the deadzone also receive a seek rather than a rate nudge, because the user
+ * must hear the clip at exactly its original speed until they explicitly change it.
  */
 const SYNC_SEEK_DRIFT = 0.5;
 /** While paused, position is snapped to the target within this tolerance. */
@@ -189,10 +181,10 @@ export const createSyncGate = (): SyncGate => ({
 /**
  * Decide how to keep a playing media element in step with the timeline.
  *
- * A hard `currentTime =` seek interrupts the audio stream, so a stalled preview used to click and
- * drop words every time drift crossed the old quarter-second threshold. Small persistent gaps are
- * instead removed by easing the element's rate, and only once the gap has proven itself: startup is
- * left completely alone and the nominal rate is whatever the user's clip speed says.
+ * The playback rate is NEVER modified by this function: the clip plays at exactly the user's
+ * chosen speed (or 1× when nothing was set). Drift is corrected exclusively by repositioning
+ * (seeking) the element to the target, never by easing the rate, because pitch is not preserved
+ * and any automatic speed change is heard as the audio "getting faster."
  *
  * `drift` is `elementTime - targetTime`, so positive means the element is running ahead.
  */
@@ -220,32 +212,35 @@ export function resyncMedia(params: {
     gate.startedAt = params.now;
     gate.since = Number.NEGATIVE_INFINITY;
   }
-  // never stack seeks on an element that is still seeking; the rate is still reset so it does not
-  // stay stuck at a correction after the seek lands
+  // never stack seeks on an element that is still seeking
   if (params.seeking) return { seek: false, rate: nominal };
 
   const drift = params.drift;
   const magnitude = Math.abs(drift);
+  // Start-up grace: no correction at all while the stream is still spinning up
   if (params.now - gate.startedAt < SYNC_START_GRACE_MS) return { seek: false, rate: nominal };
+  // Large gap: seek immediately (re-arms grace so the seek landing doesn't look like new drift)
   if (magnitude > SYNC_SEEK_DRIFT) {
     gate.startedAt = params.now;
     gate.since = Number.NEGATIVE_INFINITY;
     return { seek: true, rate: nominal };
   }
+  // Deadzone: gap is small enough to ignore entirely
   if (magnitude <= SYNC_DEADZONE) {
     gate.since = Number.NEGATIVE_INFINITY;
     return { seek: false, rate: nominal };
   }
+  // Medium gap: must survive the settle window before we act (avoids chasing transient glitches)
   if (!isFinite(gate.since)) {
     gate.since = params.now;
     return { seek: false, rate: nominal };
   }
   if (params.now - gate.since < SYNC_SETTLE_MS) return { seek: false, rate: nominal };
-  // The element advances at nominal*correction while the target advances at nominal, so the gap
-  // closes at nominal*(1-correction) per second - slow on purpose, because pitch is not preserved.
-  const strength = Math.min(1, magnitude / SYNC_FULL_NUDGE_DRIFT) * SYNC_MAX_NUDGE;
-  const corr = 1 - Math.sign(drift) * strength;
-  return { seek: false, rate: nominal * corr };
+  // Persistent medium gap past the settle window: seek to correct position, NEVER change rate.
+  // Re-arm the grace so the seek landing is not immediately read as a new correction.
+  gate.startedAt = params.now;
+  gate.since = Number.NEGATIVE_INFINITY;
+  return { seek: true, rate: nominal };
 }
 
 // ---------- preview paint gating ----------

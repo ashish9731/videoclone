@@ -24,3 +24,4 @@
 - [ ] AI auto-reframe, style transfer, body effects — require a supported processing service; not offered
 - [x] Targeted end-to-end preview and export verification; exhaustive normal-speed parity, audio quality, and fresh auto-transcription verification remain uncertified
 - [x] Gallery tiles: every tile is a real render of its preset (no emoji, no reused tiles) across Text/Stickers/Effects/Transitions/Captions/Filters
+- [x] Copy/paste for anything on the timeline - clips of every kind, a transition as its own object and a caption cue - via Ctrl+C/Ctrl+V, the toolbar buttons and each block's right-click menu; a paste lands at the playhead clear of existing material.

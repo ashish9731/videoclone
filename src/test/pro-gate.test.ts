@@ -7,7 +7,9 @@ vi.mock("sonner", () => ({
 import { toast } from "sonner";
 
 import { applyPresetAt } from "@/components/editor/library-drag";
-import { EFFECTS } from "@/lib/editor/fx";
+import { EFFECTS, FILTERS } from "@/lib/editor/fx";
+import { TRANSITIONS } from "@/lib/editor/transitions";
+import { ART_STICKERS } from "@/lib/editor/stickers";
 import { EditorStore } from "@/lib/editor/store";
 import { defaultTimeline } from "@/lib/editor/types";
 import {
@@ -68,6 +70,14 @@ describe("pro gate", () => {
     // a pixel-math effect is not gated, and no other library tab is
     expect(isProEffect("blur")).toBe(false);
     expect(isProPreset("Transitions", "mix")).toBe(false);
+  });
+
+  it("locks no transition, filter or sticker, and only the AI portrait effect group", () => {
+    // every ordinary library asset is a free preset; the sole Pro lock is the AI portrait effects
+    for (const t of TRANSITIONS) expect(isProPreset("Transitions", t.id), t.id).toBe(false);
+    for (const f of FILTERS) expect(isProPreset("Filters", f.id), f.id).toBe(false);
+    for (const s of ART_STICKERS) expect(isProPreset("Stickers", s.id), s.id).toBe(false);
+    for (const e of EFFECTS) expect(isProPreset("Effects", e.id), e.id).toBe(e.group === "AI portrait");
   });
 
   it("refuses to put a locked effect on the timeline, by + or by drop", () => {

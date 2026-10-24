@@ -3,6 +3,7 @@ import {
   Download,
   KeySquare,
   Layers,
+  Mic,
   Music2,
   Sparkles,
   Sticker,
@@ -16,6 +17,7 @@ export const AUTH_PATH = "/auth";
 /** Anchor targets that the sections in routes/index.tsx must render. */
 export const SECTIONS = {
   features: "features",
+  record: "record",
   library: "library",
   workflow: "workflow",
   export: "export",
@@ -24,6 +26,7 @@ export const SECTIONS = {
 
 export const NAV_LINKS = [
   { href: `#${SECTIONS.features}`, label: "Features" },
+  { href: `#${SECTIONS.record}`, label: "Record" },
   { href: `#${SECTIONS.library}`, label: "Library" },
   { href: `#${SECTIONS.workflow}`, label: "How it works" },
   { href: `#${SECTIONS.export}`, label: "Export" },
@@ -87,6 +90,11 @@ export const FEATURES = [
     icon: Music2,
     title: "Audio that ducks itself",
     body: "Volume envelopes, fades, library SFX and automatic ducking under voice clips — one gain function for preview and export.",
+  },
+  {
+    icon: Mic,
+    title: "Record onto the timeline",
+    body: "Capture a voice-over from your microphone — or take the tab's own audio — and it drops as a frame-exact WAV clip. No external recorder, no import step.",
   },
   {
     icon: Sticker,

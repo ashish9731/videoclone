@@ -1,15 +1,37 @@
 import { useSyncExternalStore } from "react";
-import type { Clip, Timeline, Track } from "./types";
+import type { ClipboardItem } from "./clipboard";
+import { type Clip, type Timeline, type Track, type Watermark, defaultWatermark } from "./types";
 
 export interface EditorState {
   timeline: Timeline;
+  /**
+   * The project watermark lives here, NOT inside `timeline`, so no `{ tracks }` transform, drag,
+   * trim or undo/redo snapshot can drop it. It is a project setting the user turns on once and only
+   * the user turns off; `renderFrame`/export read it from here via RenderOptions, and the editor
+   * route persists it back into the timeline JSON on save. It is intentionally kept out of the
+   * undo history so Undo can never be the thing that "removed" a watermark the user still wants.
+   */
+  watermark: Watermark;
   selectedClipId: string | null;
+  /**
+   * Multi-selection set activated by Ctrl+A: every clip id currently highlighted on the timeline.
+   * When non-empty, the single `selectedClipId` is also included. Cleared by clicking empty space
+   * or pressing Escape.
+   */
+  selectedClipIds: string[];
   /**
    * id of the clip whose in-transition is being edited as an object of its own. Only a click on
    * the transition block sets it, and any other selection clears it (see `set`), so Delete knows
    * whether it removes a blend or the clip under it.
    */
   selectedTransitionOf: string | null;
+  /**
+   * id of the caption cue the user pointed at on its own lane. Captions live outside the timeline
+   * JSON, so this is the only way Copy knows a cue was meant rather than the clip under the playhead.
+   */
+  selectedCueId: string | null;
+  /** the one object held for pasting, kept on the store because it is not text and not undoable */
+  clipboard: ClipboardItem | null;
   time: number;
   playing: boolean;
   pxPerSec: number;
@@ -35,8 +57,12 @@ export class EditorStore {
   constructor(timeline: Timeline) {
     this.state = {
       timeline,
+      watermark: timeline.watermark ?? defaultWatermark(),
       selectedClipId: null,
+      selectedClipIds: [],
       selectedTransitionOf: null,
+      selectedCueId: null,
+      clipboard: null,
       time: 0,
       playing: false,
       pxPerSec: 60,
@@ -65,7 +91,29 @@ export class EditorStore {
     if (partial.selectedClipId !== undefined && !("selectedTransitionOf" in partial)) {
       next.selectedTransitionOf = null;
     }
+    // and the same for a caption cue: one object is the target at a time
+    if (partial.selectedClipId !== undefined && !("selectedCueId" in partial))
+      next.selectedCueId = null;
+    if (partial.selectedCueId !== undefined && !("selectedClipId" in partial))
+      next.selectedClipId = null;
+    // clicking a single clip or clearing drops the multi-selection unless explicitly provided
+    if (partial.selectedClipId !== undefined && !("selectedClipIds" in partial))
+      next.selectedClipIds = [];
     this.state = next;
+    this.emit();
+  }
+
+  /** Select every clip on the timeline (Ctrl+A). */
+  selectAllClips() {
+    const ids: string[] = [];
+    for (const tr of this.state.timeline.tracks) {
+      for (const c of tr.clips) ids.push(c.id);
+    }
+    this.state = {
+      ...this.state,
+      selectedClipIds: ids,
+      selectedClipId: ids[0] ?? null,
+    };
     this.emit();
   }
 
@@ -88,6 +136,12 @@ export class EditorStore {
   /** Apply a timeline change. During a gesture, history is recorded once at endGesture. */
   update(fn: (t: Timeline) => Timeline) {
     this.commitTimeline(fn(this.state.timeline), this.gestureBase === null);
+  }
+
+  /** Change the watermark without touching the timeline or its undo history; bumps autosave. */
+  setWatermark(wm: Watermark) {
+    this.state = { ...this.state, watermark: wm, version: this.state.version + 1 };
+    this.emit();
   }
 
   beginGesture() {
@@ -117,7 +171,10 @@ export class EditorStore {
 
   updateClip(id: string, fn: (c: Clip) => Clip) {
     this.update((t) => ({
-      tracks: t.tracks.map((tr) => ({ ...tr, clips: tr.clips.map((c) => (c.id === id ? fn(c) : c)) })),
+      tracks: t.tracks.map((tr) => ({
+        ...tr,
+        clips: tr.clips.map((c) => (c.id === id ? fn(c) : c)),
+      })),
     }));
   }
   updateTrack(id: string, fn: (tr: Track) => Track) {

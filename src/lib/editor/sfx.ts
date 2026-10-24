@@ -1,11 +1,17 @@
-/** Original procedural audio; no recordings or licensed samples. Royalty-free for any project. */
-export interface Sound { id: string; name: string; category: 'Music beds' | 'Drum loops' | 'SFX'; duration: number; bpm?: number; variant: number }
+/** Royalty-free audio library: procedurally synthesized beds/loops/SFX plus a few real bundled recordings (entries that carry a `url`). */
+export interface Sound { id: string; name: string; category: 'Music beds' | 'Drum loops' | 'SFX' | 'Devotional'; duration: number; bpm?: number; variant: number; url?: string }
 const beds = ['Lo-fi dusk', 'Lo-fi rain', 'Upbeat sunrise', 'Upbeat sparkle', 'Ambient drift', 'Ambient stars', 'Cinematic tension', 'Cinematic resolve'];
 const effects = ['Whoosh', 'Swoosh', 'Pop', 'Riser', 'Impact', 'Click', 'Ding', 'Boom', 'Glitch', 'Typing', 'Applause noise', 'Downlifter', 'Laser', 'Bubble', 'Chime', 'Notification', 'Heartbeat', 'Wind', 'Static burst', 'Sparkle', 'Knock', 'Shutter', 'Zap', 'Water drop'];
+// Real recordings served from public/audio and played/uploaded as their own file (never synthesized).
+const real: Sound[] = [
+  { id: 'dev-flute', name: 'Krishna Flute', category: 'Devotional', duration: 137.72, variant: 0, url: '/audio/devotional/krishna-flute.mp3' },
+  { id: 'dev-bell', name: 'Meditation Bell', category: 'Devotional', duration: 144.51, variant: 0, url: '/audio/devotional/meditation-bell.mp3' },
+];
 export const SOUNDS: Sound[] = [
   ...beds.map((name, i): Sound => ({ id: `bed-${i}`, name, category: 'Music beds', duration: 12, variant: i })),
   ...[80, 100, 120, 140, 90, 110, 130, 160].map((bpm, i): Sound => ({ id: `drums-${bpm}`, name: `${i < 4 ? 'Pocket' : 'Breakbeat'} ${bpm} BPM`, category: 'Drum loops', bpm, duration: 16 * 60 / bpm, variant: i })),
   ...effects.map((name, i): Sound => ({ id: `sfx-${i}`, name, category: 'SFX', duration: [0.9, 0.65, 0.22, 3, 1.2, 0.12, 1.5, 2, 0.8, 2, 3, 2.5, 0.6, 0.4, 2, 0.8, 2, 3, 0.5, 2, 0.35, 0.3, 0.7, 0.5][i]!, variant: i })),
+  ...real,
 ];
 const TAU = Math.PI * 2;
 export async function renderSound(sound: Sound, sampleRate = 24000): Promise<AudioBuffer> {
@@ -65,10 +71,15 @@ export async function renderSound(sound: Sound, sampleRate = 24000): Promise<Aud
   return ctx.startRendering();
 }
 export function encodeWav(buffer: AudioBuffer): Blob {
-  const samples = buffer.getChannelData(0), bytes = new ArrayBuffer(44 + samples.length * 2), view = new DataView(bytes);
+  const channels = Math.max(1, buffer.numberOfChannels);
+  const frames = buffer.length;
+  const dataSize = frames * channels * 2;
+  const bytes = 44 + dataSize, view = new DataView(new ArrayBuffer(bytes));
   const text = (offset: number, value: string) => [...value].forEach((c, i) => view.setUint8(offset + i, c.charCodeAt(0)));
-  text(0, 'RIFF'); view.setUint32(4, bytes.byteLength - 8, true); text(8, 'WAVE'); text(12, 'fmt ');
-  view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true); view.setUint32(24, buffer.sampleRate, true); view.setUint32(28, buffer.sampleRate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true); text(36, 'data'); view.setUint32(40, samples.length * 2, true);
-  samples.forEach((s, i) => view.setInt16(44 + i * 2, Math.round(Math.max(-1, Math.min(1, s)) * 32767), true));
-  return new Blob([bytes], { type: 'audio/wav' });
+  text(0, 'RIFF'); view.setUint32(4, bytes - 8, true); text(8, 'WAVE'); text(12, 'fmt ');
+  view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, channels, true); view.setUint32(24, buffer.sampleRate, true); view.setUint32(28, buffer.sampleRate * channels * 2, true); view.setUint16(32, channels * 2, true); view.setUint16(34, 16, true); text(36, 'data'); view.setUint32(40, dataSize, true);
+  const data: Float32Array[] = []; for (let c = 0; c < channels; c++) data.push(buffer.getChannelData(c));
+  let offset = 44;
+  for (let i = 0; i < frames; i++) for (let c = 0; c < channels; c++) { view.setInt16(offset, Math.round(Math.max(-1, Math.min(1, data[c]![i] ?? 0)) * 32767), true); offset += 2; }
+  return new Blob([view], { type: 'audio/wav' });
 }

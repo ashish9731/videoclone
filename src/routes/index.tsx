@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowRight, Check, LogIn, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowRight, Check, LogIn, Mic, ShieldCheck, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Accordion,
@@ -159,6 +159,67 @@ function Landing() {
                 <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{f.body}</p>
               </article>
             ))}
+          </div>
+        </section>
+
+        {/* ---------------- record ---------------- */}
+        <section id={SECTIONS.record} className="scroll-mt-24 border-y bg-panel/20 py-20 md:py-28">
+          <div className="mx-auto grid max-w-7xl items-center gap-12 px-5 md:px-8 lg:grid-cols-[1fr_1.05fr]">
+            <div>
+              <p className="inline-flex items-center gap-2 rounded-full border bg-card/60 px-3 py-1 font-mono text-[11px] uppercase tracking-widest text-muted-foreground">
+                <Mic className="h-3.5 w-3.5 text-primary" />
+                New in the editor
+              </p>
+              <h2 className="mt-5 font-display text-3xl font-bold tracking-tight md:text-4xl">
+                Record the take without leaving the tab
+              </h2>
+              <p className="mt-4 leading-relaxed text-muted-foreground">
+                Speak a voice-over into your microphone, or capture the audio the tab is already
+                playing — and it lands on the timeline as its own clip. No external recorder, no
+                file to import, no trip through a server before you can cut it.
+              </p>
+              <div className="mt-7 flex flex-col gap-3 sm:flex-row">
+                <Button asChild size="lg" className="gap-2">
+                  <Link to={APP_PATH}>
+                    Try recording <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+                <Button asChild size="lg" variant="outline">
+                  <Link to={AUTH_PATH}>Sign in to start</Link>
+                </Button>
+              </div>
+            </div>
+
+            <ul className="grid gap-4 sm:grid-cols-2">
+              {[
+                {
+                  t: "Mic or browser audio",
+                  b: "Pick an external input, or grab the tab's own sound — a beat, a reference, a screen mix.",
+                },
+                {
+                  t: "Frame-exact and lossless",
+                  b: "The take is normalized to a WAV clip, so its length is precise and the first word is never clipped.",
+                },
+                {
+                  t: "Straight onto the lane",
+                  b: "It drops where the playhead sits, ready to trim, fade, duck under dialogue and move like any other clip.",
+                },
+                {
+                  t: "Reusable in the project",
+                  b: "Saved to your private storage and listed in the library, so the same voice-over fits anywhere later.",
+                },
+              ].map((c) => (
+                <li key={c.t} className="rounded-xl border bg-card p-5">
+                  <div className="flex items-center gap-2">
+                    <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary/12 ring-1 ring-primary/25">
+                      <Check className="h-4 w-4 text-primary" />
+                    </span>
+                    <h3 className="font-semibold leading-snug">{c.t}</h3>
+                  </div>
+                  <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{c.b}</p>
+                </li>
+              ))}
+            </ul>
           </div>
         </section>
 

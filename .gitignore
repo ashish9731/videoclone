@@ -44,3 +44,14 @@ debrand-backup-favicon.ico
 *.njsproj
 *.sln
 *.sw?
+# Vercel CLI linked-project metadata (contains org/project ids) — never commit
+.vercel
+
+# Vercel deploy helper scripts (temporary, read tokens at runtime) — never commit
+.vercel-tmp/
+
+# Raw scratch audio sources at the repo root (served copies live in public/audio; real assets go to Supabase storage)
+/Audio/
+
+# Debug reproduction artifacts dropped into /public during troubleshooting
+public/__pause-repro.mp4

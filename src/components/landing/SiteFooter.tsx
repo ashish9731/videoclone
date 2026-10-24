@@ -59,16 +59,12 @@ export function SiteFooter() {
               </Link>
             </li>
           </ul>
-          <p className="mt-4 font-mono text-[11px] text-muted-foreground">
-            WebCodecs · Canvas 2D · Supabase
-          </p>
         </div>
       </div>
 
       <div className="border-t">
         <div className="mx-auto flex max-w-7xl flex-col gap-2 px-5 py-5 font-mono text-[11px] uppercase tracking-widest text-muted-foreground md:flex-row md:items-center md:justify-between md:px-8">
           <span>© {new Date().getFullYear()} Cutroom</span>
-          <span>Everything you see here renders in this tab</span>
         </div>
       </div>
     </footer>

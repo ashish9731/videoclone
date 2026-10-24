@@ -136,30 +136,32 @@ describe("resyncMedia", () => {
     expect(run.every((r) => r.rate === 1 && !r.seek)).toBe(true);
   });
 
-  it("heals a persistent gap only after it survives start-up and the settle window, and gently", () => {
+  it("seeks a persistent gap only after it survives start-up and the settle window, never changes rate", () => {
     const gate = createSyncGate();
     const run = drive(gate, { drift: -0.15, frames: 150 });
     // first the grace window, then the gap has to be seen standing still
     expect(run.slice(0, 25).every((r) => r.rate === 1 && !r.seek)).toBe(true);
-    const last = run[run.length - 1]!;
-    expect(last.seek).toBe(false);
-    expect(last.rate).toBeGreaterThan(1);
-    // pitch is not preserved, so a correction this side of ~6% is the most that may be audible
-    expect(last.rate).toBeLessThanOrEqual(1.06);
+    // at least one seek happens after grace+settle
+    expect(run.some((r) => r.seek)).toBe(true);
+    // every frame keeps the nominal rate — never modified
+    expect(run.every((r) => r.rate === 1)).toBe(true);
   });
 
-  it("slows a stream that is running ahead by the same bounded amount", () => {
+  it("seeks a stream that is running ahead past the settle window, never slows it", () => {
     const gate = createSyncGate();
-    const last = drive(gate, { drift: 0.4, frames: 150 })[149]!;
-    expect(last.rate).toBeLessThan(1);
-    expect(last.rate).toBeGreaterThanOrEqual(0.94);
+    const run = drive(gate, { drift: 0.4, frames: 150 });
+    // corrected by seek, not by rate change
+    expect(run.some((r) => r.seek)).toBe(true);
+    expect(run.every((r) => r.rate === 1)).toBe(true);
   });
 
-  it("scales the correction with the clip's own rate so a speed ramp keeps its pitch relationship", () => {
+  it("keeps the clip's own rate for a speed ramp, seeking rather than modifying it", () => {
     const gate = createSyncGate();
-    const last = drive(gate, { drift: -0.2, frames: 150, rate: 2 })[149]!;
-    expect(last.rate).toBeGreaterThan(2);
-    expect(last.rate).toBeLessThanOrEqual(2 * 1.06);
+    const run = drive(gate, { drift: -0.2, frames: 150, rate: 2 });
+    // rate is always the user's nominal speed, never modified
+    expect(run.every((r) => r.rate === 2)).toBe(true);
+    // persistent gap past settle gets a seek
+    expect(run.some((r) => r.seek)).toBe(true);
   });
 
   it("seeks a genuinely large gap, but re-arms its grace window after each one", () => {
@@ -187,10 +189,14 @@ describe("resyncMedia", () => {
   it("arms a fresh grace window when playback is restarted", () => {
     const gate = createSyncGate();
     const warm = drive(gate, { drift: -0.2, frames: 150 });
-    expect(warm[warm.length - 1]!.rate).toBeGreaterThan(1);
+    // at least one seek happened, and no frame modified the rate
+    expect(warm.some((r) => r.seek)).toBe(true);
+    expect(warm.every((r) => r.rate === 1)).toBe(true);
+    // stopping resets the gate
     expect(
       resyncMedia({ now: 6000, playing: false, seeking: false, drift: -0.2, rate: 1, gate }).rate,
     ).toBe(1);
+    // restarting playback: grace window prevents immediate action
     expect(
       resyncMedia({ now: 6100, playing: true, seeking: false, drift: -0.2, rate: 1, gate }),
     ).toEqual({ seek: false, rate: 1 });

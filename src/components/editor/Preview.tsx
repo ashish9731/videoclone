@@ -17,7 +17,7 @@ import { type EditorState, type EditorStore, useEditor } from "@/lib/editor/stor
 import { renderFrame } from "@/lib/editor/render";
 import { signedUrl } from "@/lib/editor/media";
 import { clipGainAt, voiceClips } from "@/lib/editor/audio-fx";
-import { outgoingTail } from "@/lib/editor/transitions";
+import { outgoingTail, transitionBlockSpan } from "@/lib/editor/transitions";
 import {
   FULL_QUALITY,
   SEEK_HOLD_MS,
@@ -34,6 +34,7 @@ import {
   type CaptionTrack,
   type MediaAsset,
   type Timeline,
+  type Watermark,
   clipEnd,
   formatTime,
   isVisualClip,
@@ -69,6 +70,7 @@ export function Preview({ store, assets, captions, width, height, fps }: Props) 
   const assetsRef = useRef(assets);
   assetsRef.current = assets;
   const timeline = useEditor(store, (s) => s.timeline);
+  const watermark = useEditor(store, (s) => s.watermark);
   const playing = useEditor(store, (s) => s.playing);
   const animate = useEditor(store, (s) => s.animate);
   const inspectorTab = useEditor(store, (s) => s.inspectorTab);
@@ -159,6 +161,17 @@ export function Preview({ store, assets, captions, width, height, fps }: Props) 
         }
       }
     }
+    // the watermark logo is not a clip, but it still needs its image loaded before it can paint
+    const wm = watermark;
+    if (wm?.enabled && wm.kind === "logo" && wm.logoAssetId) {
+      const a = assets.get(wm.logoAssetId);
+      if (a && !images.current.has(a.id)) {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        images.current.set(a.id, img);
+        signedUrl(a.storage_path).then((u) => (img.src = u));
+      }
+    }
     for (const [id, el] of media.current) {
       if (!live.has(id)) {
         el.pause();
@@ -169,7 +182,7 @@ export function Preview({ store, assets, captions, width, height, fps }: Props) 
         seekHeld.current.delete(id);
       }
     }
-  }, [timeline, assets]);
+  }, [timeline, assets, watermark]);
 
   // render + sync loop
   useEffect(() => {
@@ -186,6 +199,7 @@ export function Preview({ store, assets, captions, width, height, fps }: Props) 
     const minFrameMs = 1000 / Math.max(1, fps) - 2;
     let lastT = Number.NaN;
     let lastTimeline: Timeline | undefined;
+    let lastWatermark: Watermark | undefined;
     let lastCaptions: CaptionTrack[] | null = null;
     let lastAssets: Map<string, MediaAsset> | null = null;
     let lastRenderAt = -1e9;
@@ -252,14 +266,24 @@ export function Preview({ store, assets, captions, width, height, fps }: Props) 
         // only the clip kind matters: a media clip decodes wherever it sits in the timeline
         if (tr.hidden) continue;
         for (const c of tr.clips) {
-          if (c.kind === "text" || c.kind === "shape" || c.kind === "audio" || c.kind === "effect" || c.kind === "filter")
+          if (
+            c.kind === "text" ||
+            c.kind === "shape" ||
+            c.kind === "audio" ||
+            c.kind === "effect" ||
+            c.kind === "filter"
+          )
             continue;
           const end = clipEnd(c);
           const inTail = t >= end && t < end + outgoingTail(tr, c);
-          if (!(t >= c.start && t < end) && !inTail) continue;
+          // a clip in its transition block lead also needs its source ready
+          const blk = c.transitionIn ? transitionBlockSpan(c) : null;
+          const inLead = blk != null && t >= blk.start && t < c.start;
+          if (!(t >= c.start && t < end) && !inTail && !inLead) continue;
           if (c.kind === "video") {
             const el = media.current.get(c.id) as HTMLVideoElement | undefined;
-            if (!el || el.readyState < 2 || !el.src || el.seeking || el.videoWidth === 0) return false;
+            if (!el || el.readyState < 2 || !el.src || el.seeking || el.videoWidth === 0)
+              return false;
             const repositioned = seekHeld.current.get(c.id);
             if (repositioned !== undefined && now - repositioned < SEEK_HOLD_MS) return false;
           } else {
@@ -267,6 +291,18 @@ export function Preview({ store, assets, captions, width, height, fps }: Props) 
             if (!img || !img.complete || !img.naturalWidth) return false;
           }
         }
+      }
+      // a pending watermark logo is a source this frame is missing too, so the loop keeps trying
+      // until it loads and then repaints (shownComplete was left false by the best-effort paint)
+      const wm = store.get().watermark;
+      if (
+        wm?.enabled &&
+        wm.kind === "logo" &&
+        wm.logoAssetId &&
+        assetsRef.current.get(wm.logoAssetId)
+      ) {
+        const img = images.current.get(wm.logoAssetId);
+        if (!img || !img.complete || !img.naturalWidth) return false;
       }
       return true;
     };
@@ -293,9 +329,14 @@ export function Preview({ store, assets, captions, width, height, fps }: Props) 
           // the tail is a transition concern, so it follows the clip's own kind - a block or
           // an audio clip sharing a lane has nothing to hold open
           const tail = isVisualClip(c) ? outgoingTail(tr, c) : 0;
+          // the lead is how far before c.start the transition block reaches: clip needs its first
+          // frame decoded and positioned so the blend can paint it even though the clip hasn't started
+          const block = isVisualClip(c) && c.transitionIn ? transitionBlockSpan(c) : null;
+          const lead = block ? Math.max(0, c.start - block.start) : 0;
           const inClip = t >= c.start && t < end;
           const inTail = !inClip && t >= end && t < end + tail;
-          if (!inClip && !inTail) {
+          const inLead = !inClip && !inTail && lead > 0 && t >= c.start - lead && t < c.start;
+          if (!inClip && !inTail && !inLead) {
             if (!el.paused) el.pause();
             // an element that is off screen is not in step with anything, so its next entrance gets
             // the same untouched start-up window as a fresh press of play
@@ -303,22 +344,23 @@ export function Preview({ store, assets, captions, width, height, fps }: Props) 
             gate.positioned = false;
             continue;
           }
-          let target = sourceTime(c, t);
+          // During the lead period the clip hasn't started yet; show its first frame for compositing.
+          let target = inLead ? sourceTime(c, c.start) : sourceTime(c, t);
           if (isFinite(el.duration) && el.duration > 0)
-            target = Math.min(el.duration - 0.05, target);
+            target = Math.min(el.duration - 0.05, Math.max(0, target));
           const rate = Math.min(
             16,
             Math.max(0.0625, speedAt(c, Math.min(t - c.start, end - c.start))),
           );
-          el.muted = tr.muted || inTail;
+          el.muted = tr.muted || inTail || inLead;
           const voices = c.duck && c.duck > 0 ? voiceClips(s.timeline, c.id) : null;
-          el.volume = inTail ? 0 : Math.min(1, clipGainAt(c, t, voices));
+          el.volume = inTail || inLead ? 0 : Math.min(1, clipGainAt(c, t, voices));
           // Drift under the seek band is healed by nudging the rate instead of seeking: a seek
           // restarts the audio stream, which is the click/dropped-word the old resync produced every
           // time a heavy preview frame pushed the element a quarter second out of step. The gate keeps
           // the start-up lag (decode, buffer fill, governor settling) out of that decision, so pressing
           // play never speeds the voice up - the rate stays exactly the clip's own speed.
-          const running = playingNow && c.freezeAt === undefined;
+          const running = playingNow && c.freezeAt === undefined && !inLead;
           // The first frame of an entrance is placement, not correction: a clip that starts mid
           // playback has to jump to its own source position right away. Re-arming the gate here is
           // what keeps that jump from being followed by a catch-up speed change.
@@ -379,6 +421,7 @@ export function Preview({ store, assets, captions, width, height, fps }: Props) 
 
       const restructured =
         s.timeline !== lastTimeline ||
+        s.watermark !== lastWatermark ||
         captionsRef.current !== lastCaptions ||
         assetsRef.current !== lastAssets;
       lastT = t;
@@ -422,6 +465,7 @@ export function Preview({ store, assets, captions, width, height, fps }: Props) 
       if (now - lastRenderAt < minFrameMs && !restructured && !playingEdge) return;
       lastRenderAt = now;
       lastTimeline = s.timeline;
+      lastWatermark = s.watermark;
       lastCaptions = captionsRef.current;
       lastAssets = assetsRef.current;
       shownTimeline = s.timeline;
@@ -448,7 +492,17 @@ export function Preview({ store, assets, captions, width, height, fps }: Props) 
             }
             return null;
           },
-          { width: pw, height: ph, baseHeight: height, captions: captionsRef.current },
+          {
+            width: pw,
+            height: ph,
+            baseHeight: height,
+            captions: captionsRef.current,
+            watermark: s.watermark,
+            getWatermarkImage: (id) => {
+              const img = images.current.get(id);
+              return img && img.complete && img.naturalWidth ? img : null;
+            },
+          },
         );
       } catch (e) {
         painted = false;

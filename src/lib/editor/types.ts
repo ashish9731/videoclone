@@ -110,10 +110,32 @@ export interface TextStyle {
 export interface Transition {
   type: TransitionType;
   duration: number;
+  /**
+   * Seconds the block's centre sits from the cut, so an edge can be trimmed on its own while the
+   * opposite edge stays put. `0` (undefined) straddles the joint evenly, as a fresh blend always
+   * does; it is a lane affordance - the dissolve itself still plays from the cut for `duration`.
+   */
+  bias?: number | undefined;
 }
 
-export const BLEND_MODES = ["multiply", "screen", "overlay", "darken", "lighten", "color-dodge", "color-burn", "hard-light", "soft-light", "difference", "exclusion", "hue", "saturation", "color", "luminosity"] as const;
-export type BlendMode = typeof BLEND_MODES[number];
+export const BLEND_MODES = [
+  "multiply",
+  "screen",
+  "overlay",
+  "darken",
+  "lighten",
+  "color-dodge",
+  "color-burn",
+  "hard-light",
+  "soft-light",
+  "difference",
+  "exclusion",
+  "hue",
+  "saturation",
+  "color",
+  "luminosity",
+] as const;
+export type BlendMode = (typeof BLEND_MODES)[number];
 
 export interface Clip {
   id: string;
@@ -146,7 +168,9 @@ export interface Clip {
   /** 0-1: how much this clip's volume dips while other (voice) audio plays */
   duck?: number | undefined;
   freezeAt?: number | undefined; // held source timestamp
-  chroma?: { enabled: boolean; color: string; tolerance: number; softness: number; spill: number } | undefined;
+  chroma?:
+    | { enabled: boolean; color: string; tolerance: number; softness: number; spill: number }
+    | undefined;
   mask?: import("./mask").ClipMask | undefined;
   blend?: BlendMode | undefined;
   crop?: { x: number; y: number; w: number; h: number } | undefined; // normalized source rectangle
@@ -162,8 +186,50 @@ export interface Track {
   clips: Clip[];
 }
 
+export type WatermarkPosition =
+  "top-left" | "top-right" | "bottom-left" | "bottom-right" | "center";
+
+/**
+ * A project-wide overlay baked into every frame by renderFrame, so it shows in the preview and in
+ * the export exactly the same way. It is not a clip: it lives on the timeline JSON (auto-saved) and
+ * always paints above the picture, which is what makes it usable as an anti-copy watermark. `size`
+ * and `padding` are fractions of the frame height so the mark scales with resolution; `tiled` repeats
+ * it diagonally for the ghosted, hard-to-crop-out look.
+ */
+export interface Watermark {
+  enabled: boolean;
+  kind: "text" | "logo";
+  text: string;
+  /** references an image MediaAsset in the project; the logo is uploaded through the media bucket */
+  logoAssetId?: string | undefined;
+  color: string;
+  bold: boolean;
+  opacity: number; // 0..1
+  size: number; // fraction of frame height
+  padding: number; // fraction of frame height, edge margin for corner placement
+  position: WatermarkPosition;
+  rotation: number; // degrees
+  tiled: boolean;
+}
+
+export const defaultWatermark = (): Watermark => ({
+  enabled: false,
+  kind: "text",
+  text: "© Cutroom",
+  logoAssetId: undefined,
+  color: "#ffffff",
+  bold: true,
+  opacity: 0.3,
+  size: 0.06,
+  padding: 0.05,
+  position: "bottom-right",
+  rotation: 0,
+  tiled: false,
+});
+
 export interface Timeline {
   tracks: Track[];
+  watermark?: Watermark | undefined;
 }
 
 export interface CaptionCue {
@@ -219,7 +285,12 @@ export const TEXT_DEFAULT_DURATION = 4;
 export const STILL_SOURCE_DURATION = 60 * 60 * 6;
 
 export const defaultEffects = (): Effects => ({
-  whites: 0, blacks: 0, vibrance: 0, clarity: 0, grain: 0, fade: 0,
+  whites: 0,
+  blacks: 0,
+  vibrance: 0,
+  clarity: 0,
+  grain: 0,
+  fade: 0,
   brightness: 100,
   contrast: 100,
   saturation: 100,
@@ -230,7 +301,13 @@ export const defaultEffects = (): Effects => ({
   invert: 0,
 });
 
-export const defaultTransform = (): Transform => ({ x: 0, y: 0, scale: 1, rotation: 0, opacity: 1 });
+export const defaultTransform = (): Transform => ({
+  x: 0,
+  y: 0,
+  scale: 1,
+  rotation: 0,
+  opacity: 1,
+});
 
 export const defaultTextStyle = (): TextStyle => ({
   content: "Your text",
@@ -270,7 +347,10 @@ export const SPEED_MAX = 10;
 export function normCurve(pts: SpeedPoint[] | undefined): SpeedPoint[] | null {
   if (!pts || pts.length < 2) return null;
   const s = [...pts]
-    .map((p) => ({ t: Math.min(1, Math.max(0, p.t)), speed: Math.min(SPEED_MAX, Math.max(SPEED_MIN, p.speed)) }))
+    .map((p) => ({
+      t: Math.min(1, Math.max(0, p.t)),
+      speed: Math.min(SPEED_MAX, Math.max(SPEED_MIN, p.speed)),
+    }))
     .sort((a, b) => a.t - b.t);
   if (s[0]!.t > 0) s.unshift({ t: 0, speed: s[0]!.speed });
   if (s[s.length - 1]!.t < 1) s.push({ t: 1, speed: s[s.length - 1]!.speed });
@@ -281,7 +361,8 @@ export function normCurve(pts: SpeedPoint[] | undefined): SpeedPoint[] | null {
 export function curveIntegral(curve: SpeedPoint[], u: number): number {
   let acc = 0;
   for (let i = 0; i < curve.length - 1; i++) {
-    const a = curve[i]!, b = curve[i + 1]!;
+    const a = curve[i]!,
+      b = curve[i + 1]!;
     if (u <= a.t) break;
     const end = Math.min(u, b.t);
     const span = b.t - a.t;
@@ -294,8 +375,10 @@ export function curveIntegral(curve: SpeedPoint[], u: number): number {
 export function curveSpeedAt(curve: SpeedPoint[], u: number): number {
   if (u <= 0) return curve[0]!.speed;
   for (let i = 0; i < curve.length - 1; i++) {
-    const a = curve[i]!, b = curve[i + 1]!;
-    if (u <= b.t) return b.t > a.t ? a.speed + ((b.speed - a.speed) * (u - a.t)) / (b.t - a.t) : b.speed;
+    const a = curve[i]!,
+      b = curve[i + 1]!;
+    if (u <= b.t)
+      return b.t > a.t ? a.speed + ((b.speed - a.speed) * (u - a.t)) / (b.t - a.t) : b.speed;
   }
   return curve[curve.length - 1]!.speed;
 }
@@ -481,7 +564,8 @@ function parseSubtitleTime(raw: string): number | null {
   const min = Number(m[2]);
   const sec = Number(m[3]);
   const ms = Number((m[4] ?? "0").padEnd(3, "0"));
-  if (!Number.isFinite(h) || !Number.isFinite(min) || !Number.isFinite(sec) || !Number.isFinite(ms)) return null;
+  if (!Number.isFinite(h) || !Number.isFinite(min) || !Number.isFinite(sec) || !Number.isFinite(ms))
+    return null;
   return h * 3600 + min * 60 + sec + ms / 1000;
 }
 
@@ -503,7 +587,10 @@ export function parseSubtitles(text: string): CaptionCue[] {
   const normalized = text.replace(/\r\n?/g, "\n").replace(/^\uFEFF/, "");
   const cues: CaptionCue[] = [];
   for (const block of normalized.split(/\n{2,}/)) {
-    const lines = block.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+    const lines = block
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
     if (!lines.length) continue;
     let i = 0;
     // WebVTT file header / cue identifiers before the timing line
@@ -525,8 +612,24 @@ export function parseSubtitles(text: string): CaptionCue[] {
 
 export function newTrack(kind: TrackKind, index: number): Track {
   const label =
-    kind === "video" ? "Video" : kind === "audio" ? "Audio" : kind === "effect" ? "Effects" : kind === "filter" ? "Filters" : "Text";
-  return { id: uid(), kind, name: `${label} ${index}`, muted: false, hidden: false, locked: false, clips: [] };
+    kind === "video"
+      ? "Video"
+      : kind === "audio"
+        ? "Audio"
+        : kind === "effect"
+          ? "Effects"
+          : kind === "filter"
+            ? "Filters"
+            : "Text";
+  return {
+    id: uid(),
+    kind,
+    name: `${label} ${index}`,
+    muted: false,
+    hidden: false,
+    locked: false,
+    clips: [],
+  };
 }
 
 export function defaultTimeline(): Timeline {
