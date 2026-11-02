@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, Search, Plus, Star, UserRound } from "lucide-react";
+import { ChevronDown, ChevronRight, Search, Plus, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
@@ -35,7 +35,7 @@ export type LibraryTab =
   | "Filters"
   | "Adjustment"
   | "Watermark"
-  | "AI avatar";
+  | "AI Studio";
 const CATEGORY: Record<LibraryTab, string[]> = {
   Media: ["Media"],
   Audio: ["Audio"],
@@ -66,7 +66,7 @@ const CATEGORY: Record<LibraryTab, string[]> = {
   Filters: ["Favorites", "Trending", ...new Set(FILTERS.map((f) => f.group))],
   Adjustment: ["Color"],
   Watermark: ["Watermark"],
-  "AI avatar": ["Talking avatar"],
+  "AI Studio": ["AI Studio"],
 };
 type Item = { id: string; name: string; group: string; clip?: Clip | undefined; apply: () => void };
 // Categories that genuinely ship no engine presets: branded third-party packs (still under license,
@@ -319,6 +319,7 @@ export function AssetBrowser({
   audio,
   captions,
   watermark,
+  aiStudio,
 }: {
   tab: LibraryTab;
   store: EditorStore;
@@ -328,6 +329,7 @@ export function AssetBrowser({
   audio: ReactNode;
   captions: ReactNode;
   watermark: ReactNode;
+  aiStudio: ReactNode;
 }) {
   const [category, setCategory] = useState(
     ["Effects", "Transitions", "Filters", "Stickers", "Text"].includes(tab)
@@ -508,15 +510,8 @@ export function AssetBrowser({
           </div>
         )}
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {tab === "AI avatar" ? (
-            <div className="space-y-3 p-6 text-sm text-muted-foreground">
-              <UserRound className="size-10" />
-              <h2 className="flex items-center gap-2 text-foreground">
-                {PRO_COPY.aiAvatar.title}
-                <ProChip />
-              </h2>
-              <p>{PRO_COPY.aiAvatar.body}</p>
-            </div>
+          {tab === "AI Studio" ? (
+            aiStudio
           ) : UNAVAILABLE.has(category) ? (
             <p className="p-5 text-xs text-muted-foreground">
               {category} is not available. Stock libraries and bundled third-party packs are not

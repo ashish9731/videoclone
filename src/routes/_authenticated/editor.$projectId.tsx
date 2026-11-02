@@ -13,8 +13,8 @@ import {
   Blend,
   SlidersHorizontal,
   Palette,
-  UserRound,
   Stamp,
+  WandSparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -35,6 +35,7 @@ import { MediaPanel } from "@/components/editor/MediaPanel";
 import { Inspector } from "@/components/editor/Inspector";
 import { CaptionsPanel } from "@/components/editor/CaptionsPanel";
 import { WatermarkPanel } from "@/components/editor/WatermarkPanel";
+import { AIStudioPanel } from "@/components/editor/AIStudioPanel";
 import { ExportDialog } from "@/components/editor/ExportDialog";
 import { AssetBrowser, type LibraryTab } from "@/components/editor/AssetBrowser";
 
@@ -254,7 +255,7 @@ function EditorPage() {
             { name: "Filters", icon: Palette },
             { name: "Adjustment", icon: SlidersHorizontal },
             { name: "Watermark", icon: Stamp },
-            { name: "AI avatar", icon: UserRound },
+            { name: "AI Studio", icon: WandSparkles },
           ] as const
         ).map((t) => (
           <button
@@ -336,6 +337,21 @@ function EditorPage() {
                   userId={user.id}
                   projectId={projectId}
                   onAdded={(a) => setAssetList((l) => [...l, a])}
+                />
+              }
+              aiStudio={
+                <AIStudioPanel
+                  store={store}
+                  assets={assetList}
+                  userId={user.id}
+                  projectId={projectId}
+                  onAdded={(a) => setAssetList((l) => [...l, a])}
+                  createCaptionTrack={async (t) => {
+                    // same save path as the Captions panel, and the new track becomes active
+                    const c = await createCaption(t);
+                    if (c) setActiveCap(c.id);
+                    return c;
+                  }}
                 />
               }
             />

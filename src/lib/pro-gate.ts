@@ -11,8 +11,10 @@ export type ProFeature = "autoCaptions" | "captionTranslate" | "aiPortrait" | "a
 
 /** Flip an entry when that part of Pro actually ships; the button then runs its real handler. */
 export const PRO_AVAILABLE: Record<ProFeature, boolean> = {
-  autoCaptions: false,
-  captionTranslate: false,
+  // ships: timeline audio is transcribed on ElevenLabs Scribe, in the spoken language
+  autoCaptions: true,
+  // ships: translation runs on the connected OpenRouter text model
+  captionTranslate: true,
   aiPortrait: false,
   aiAvatar: false,
 };

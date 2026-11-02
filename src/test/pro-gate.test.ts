@@ -23,6 +23,8 @@ import {
 } from "@/lib/pro-gate";
 
 const AI_SURFACES: ProFeature[] = ["autoCaptions", "captionTranslate", "aiPortrait", "aiAvatar"];
+// caption AI ships on connected services (ElevenLabs Scribe + OpenRouter); these still wait
+const LOCKED: ProFeature[] = ["aiPortrait", "aiAvatar"];
 
 const drop = (store: EditorStore, tab: string, id: string) => {
   const placed = applyPresetAt(store, tab, id, {
@@ -37,15 +39,20 @@ const drop = (store: EditorStore, tab: string, id: string) => {
 describe("pro gate", () => {
   beforeEach(() => vi.mocked(toast.info).mockClear());
 
-  it("locks every AI surface in this build", () => {
-    for (const feature of AI_SURFACES) {
+  it("ships the caption AI surfaces and locks every other one in this build", () => {
+    expect(PRO_AVAILABLE.autoCaptions).toBe(true);
+    expect(PRO_AVAILABLE.captionTranslate).toBe(true);
+    expect(proLocked("autoCaptions")).toBe(false);
+    expect(proLocked("captionTranslate")).toBe(false);
+    for (const feature of LOCKED) {
       expect(PRO_AVAILABLE[feature], feature).toBe(false);
       expect(proLocked(feature), feature).toBe(true);
     }
+    expect(AI_SURFACES.length).toBe(4);
   });
 
   it("answers a locked feature with 'coming soon in Pro' and a working alternative", () => {
-    for (const feature of AI_SURFACES) {
+    for (const feature of LOCKED) {
       const copy = PRO_COPY[feature];
       const title = copy.title.toLowerCase();
       expect(title, feature).toContain("coming soon");
@@ -56,9 +63,9 @@ describe("pro gate", () => {
   });
 
   it("raises the same notice from every surface that tries the feature", () => {
-    announcePro("autoCaptions");
-    expect(toast.info).toHaveBeenCalledWith(PRO_COPY.autoCaptions.title, {
-      description: PRO_COPY.autoCaptions.body,
+    announcePro("aiPortrait");
+    expect(toast.info).toHaveBeenCalledWith(PRO_COPY.aiPortrait.title, {
+      description: PRO_COPY.aiPortrait.body,
     });
   });
 
@@ -77,7 +84,8 @@ describe("pro gate", () => {
     for (const t of TRANSITIONS) expect(isProPreset("Transitions", t.id), t.id).toBe(false);
     for (const f of FILTERS) expect(isProPreset("Filters", f.id), f.id).toBe(false);
     for (const s of ART_STICKERS) expect(isProPreset("Stickers", s.id), s.id).toBe(false);
-    for (const e of EFFECTS) expect(isProPreset("Effects", e.id), e.id).toBe(e.group === "AI portrait");
+    for (const e of EFFECTS)
+      expect(isProPreset("Effects", e.id), e.id).toBe(e.group === "AI portrait");
   });
 
   it("refuses to put a locked effect on the timeline, by + or by drop", () => {

@@ -1,4 +1,4 @@
-import { fireEvent, render } from "@testing-library/react";
+import { fireEvent, render, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // sonner's export is called both as `toast(...)` and as `toast.info(...)`; the panel uses both forms.
@@ -7,8 +7,8 @@ const sonner = vi.hoisted(() =>
 );
 vi.mock("sonner", () => ({ toast: sonner }));
 
-// The gated actions must not even reach the modules they would have used: these spies fail the test
-// if a click gets past the Pro notice and starts a job.
+// The still-locked surfaces must not even reach the modules they would have used: these spies fail
+// the test if a click gets past the Pro notice and starts a job.
 const transcribe = vi.fn();
 vi.mock("@/lib/editor/transcribe-client", () => ({
   transcribeTimeline: (...args: unknown[]) => transcribe(...args),
@@ -26,7 +26,6 @@ import {
   defaultCaptionStyle,
   defaultTimeline,
 } from "@/lib/editor/types";
-import { PRO_COPY } from "@/lib/pro-gate";
 
 // Radix (Slider, Select) measures with ResizeObserver, which jsdom lacks.
 globalThis.ResizeObserver = class {
@@ -81,30 +80,37 @@ describe("captions panel AI gate", () => {
     serverFn.mockClear();
   });
 
-  it("answers the auto-caption button with the Pro notice instead of transcribing", () => {
-    const { getByRole } = setup([], null);
+  it("runs the real transcription job when the auto-caption button is clicked", async () => {
+    transcribe.mockResolvedValue([cue("t1", 0.5, 1.6, "Hello there")]);
+    const { getByRole, createTrack } = setup([], null);
     fireEvent.click(getByRole("button", { name: /Auto-generate captions/ }));
-    expect(sonner.info).toHaveBeenCalledWith(PRO_COPY.autoCaptions.title, {
-      description: PRO_COPY.autoCaptions.body,
-    });
-    expect(transcribe).not.toHaveBeenCalled();
+    await waitFor(() => expect(createTrack).toHaveBeenCalledTimes(1));
+    expect(transcribe).toHaveBeenCalledTimes(1);
+    // no forced language: the model detects and captions in the spoken language
+    expect(vi.mocked(transcribe).mock.calls[0]?.[2]).toBeUndefined();
+    expect(vi.mocked(createTrack).mock.calls[0]?.[0]?.name).toBe("Auto captions");
+    expect(vi.mocked(createTrack).mock.calls[0]?.[0]?.language).toBe("auto");
   });
 
-  it("says up front which caption controls are Pro-only", () => {
-    const { getAllByText, getByText } = setup([track([cue("c1", 1, 2, "Hello")])], "cap-1");
-    // one chip on the transcription button, one on Translate
-    expect(getAllByText("Pro")).toHaveLength(2);
-    // and the line under the button is the gate's own sentence, not a second copy of it
-    expect(getByText(PRO_COPY.autoCaptions.title)).toBeTruthy();
+  it("ships both caption AI controls, so nothing carries a Pro chip", () => {
+    const { queryAllByText, getByText } = setup([track([cue("c1", 1, 2, "Hello")])], "cap-1");
+    // transcription and translation both run on connected services now
+    expect(queryAllByText("Pro")).toHaveLength(0);
+    expect(
+      getByText("Transcribes the spoken audio on your timeline into timed captions."),
+    ).toBeTruthy();
   });
 
-  it("answers the translate button with the Pro notice instead of calling the server", () => {
-    const { getByRole } = setup([track([cue("c1", 1, 2, "Hello")])], "cap-1");
+  it("runs the real translation when Translate is clicked", async () => {
+    serverFn.mockResolvedValue([{ id: "c1", text: "Bonjour" }]);
+    const { getByRole, createTrack } = setup([track([cue("c1", 1, 2, "Hello")])], "cap-1");
     fireEvent.click(getByRole("button", { name: /Translate/ }));
-    expect(sonner.info).toHaveBeenCalledWith(PRO_COPY.captionTranslate.title, {
-      description: PRO_COPY.captionTranslate.body,
-    });
-    expect(serverFn).not.toHaveBeenCalled();
+    await waitFor(() => expect(createTrack).toHaveBeenCalledTimes(1));
+    expect(serverFn).toHaveBeenCalledTimes(1);
+    const created = vi.mocked(createTrack).mock.calls[0]?.[0];
+    expect(created?.cues[0]?.text).toBe("Bonjour");
+    // the source track is hidden once the translated one exists
+    expect(created?.language).not.toBe("auto");
   });
 
   it("leaves the caption work that really runs un gated", () => {
